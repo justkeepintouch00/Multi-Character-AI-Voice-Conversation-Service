@@ -1,6 +1,4 @@
 # Multi-Character-AI-Voice-Conversation-Service
-멀티 AI 캐릭터 음성 대화 서비스
-
 캐릭터 기반 비동기 멀티에이전트 고민 상담 시스템 연구계획서
 > **English title:** Design and Evaluation of an Asynchronous Character-Based Multi-Agent System for Empathetic Everyday Counseling  
 > **연구 유형:** 시스템 설계·구현 및 사용자 비교 실험  
@@ -364,18 +362,6 @@ Wang, M. et al. (2025). AnnaAgent: Dynamic Evolution Agent System with Multi-Ses
 Meng, Q. et al. (2026). StoryMI: Steerable Multi-Agent Therapeutic Dialogue Generation. Findings of ACL 2026.
 World Health Organization (2021). Ethics and Governance of Artificial Intelligence for Health.
 World Health Organization (2023). WHO calls for safe and ethical AI for health.
----
-22. 현재 단계
-[x] 핵심 문제와 연구 범위 정의
-[x] 멀티에이전트 최대 단계 및 가시적 발화 제한 정의
-[x] 비동기 처리 개념과 시스템 구조 정의
-[ ] 캐릭터 A·B의 역할·성격·관계 확정
-[ ] 상담 정책 JSON Schema 작성
-[ ] 120개 평가 시나리오 구축
-[ ] 단일 에이전트 Baseline 구현
-[ ] 멀티에이전트 텍스트 PoC 구현
-[ ] 범위 기반 기억 및 비동기 Worker 구현
-[ ] 비교 실험과 사용자 평가 수행
 ---
 23. 라이선스 및 데이터 공개 계획
 코드, 프롬프트, 평가데이터의 라이선스는 각각 분리하여 명시한다. 실제 사용자 대화, 개인 기억 및 저작권이 확인되지 않은 캐릭터 자산은 공개 저장소에 업로드하지 않는다. 공개 평가데이터는 비식별 가상 시나리오를 원칙으로 하며 데이터 카드에 생성 방식, 검수 절차, 한계 및 금지 용도를 기록한다.
