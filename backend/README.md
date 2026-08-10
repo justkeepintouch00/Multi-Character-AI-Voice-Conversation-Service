@@ -1,4 +1,16 @@
-# Backend database skeleton
+# Character Companion Backend
+
+캐릭터 기반 멀티 AI 음성 동반자 서비스의 FastAPI 백엔드다.
+
+현재 구현 범위:
+
+- PostgreSQL용 SQLAlchemy 모델 27개
+- Alembic 초기 마이그레이션
+- FastAPI 실행 골격과 자동 OpenAPI 문서
+- `GET /health`: FastAPI 프로세스 상태 확인
+- `GET /health/db`: PostgreSQL 연결 상태 확인
+
+기능 API 계약은 `docs/20260810_1638_API_CONTRACT.md`에 있다. 캐릭터·대화·메시지 기능 API의 실제 처리 로직은 아직 구현 전이다.
 
 ## SQLAlchemy와 Alembic의 역할
 
@@ -37,13 +49,21 @@ cd backend
 python -m pip install -e ".[dev]"
 ```
 
-## 설정
+## PostgreSQL 연결 설정
 
-`.env.example`의 값을 참고해 `DATABASE_URL` 환경 변수를 설정한다.
+예제 파일을 실제 설정 파일로 복사한다.
 
 ```powershell
-$env:DATABASE_URL = "postgresql+psycopg://postgres:비밀번호@localhost:5432/character_companion"
+Copy-Item .env.example .env
 ```
+
+`.env`를 열고 `YOUR_POSTGRES_PASSWORD`를 PostgreSQL 설치 시 정한 실제 비밀번호로 바꾼다.
+
+```dotenv
+DATABASE_URL=postgresql+psycopg://postgres:YOUR_POSTGRES_PASSWORD@localhost:5432/character_companion
+```
+
+루트 `.gitignore`가 `.env`를 제외하므로 실제 비밀번호 파일은 커밋하지 않는다. 비밀번호에 `@`, `:`, `/`, `#` 같은 문자가 있으면 URL 인코딩이 필요하다.
 
 ## migration 적용
 
@@ -67,6 +87,33 @@ python -m alembic -c alembic.ini downgrade -1
 
 ```powershell
 python -m alembic -c alembic.ini revision --autogenerate -m "describe change"
+```
+
+## FastAPI 서버 실행
+
+`backend` 폴더에서 실행한다.
+
+```powershell
+python -m uvicorn app.main:app --reload
+```
+
+터미널에 다음 주소가 보이면 실행 중이다.
+
+```text
+Uvicorn running on http://127.0.0.1:8000
+```
+
+- 서버 상태: <http://127.0.0.1:8000/health>
+- PostgreSQL 상태: <http://127.0.0.1:8000/health/db>
+- Swagger UI: <http://127.0.0.1:8000/docs>
+- ReDoc: <http://127.0.0.1:8000/redoc>
+
+서버 종료는 실행 중인 터미널에서 `Ctrl+C`를 누른다.
+
+## 테스트
+
+```powershell
+python -m pytest
 ```
 
 ## 현재 구현 범위
