@@ -1,0 +1,2 @@
+"""Character companion backend package."""
+
