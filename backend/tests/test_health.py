@@ -1,0 +1,43 @@
+from fastapi.testclient import TestClient
+
+from app.api.routes import health
+from app.main import app
+
+
+client = TestClient(app)
+
+
+def test_service_health() -> None:
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ok",
+        "service": "character-companion-backend",
+    }
+
+
+def test_database_health_when_connected(monkeypatch) -> None:
+    monkeypatch.setattr(health, "database_is_reachable", lambda: True)
+
+    response = client.get("/health/db")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "database": "connected"}
+
+
+def test_database_health_when_disconnected(monkeypatch) -> None:
+    monkeypatch.setattr(health, "database_is_reachable", lambda: False)
+
+    response = client.get("/health/db")
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "error", "database": "disconnected"}
+
+
+def test_openapi_exposes_health_endpoints() -> None:
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    assert "/health" in response.json()["paths"]
+    assert "/health/db" in response.json()["paths"]
