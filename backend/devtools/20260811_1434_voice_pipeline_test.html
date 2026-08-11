@@ -12,6 +12,8 @@
     button:disabled { opacity: .45; cursor: not-allowed; }
     #start { background: #22c55e; color: #052e16; }
     #stop { background: #ef4444; color: white; }
+    #uploadMp3 { background: #60a5fa; color: #172554; }
+    input[type="file"] { display: block; margin: 10px 0; }
     .status { color: #93c5fd; min-height: 1.5em; }
     .diagnostic { color: #cbd5e1; font-size: .92rem; }
     .ok { color: #86efac; }
@@ -43,8 +45,13 @@
 
   <section>
     <h2>2. 음성 입력</h2>
+    <h3>마이크 녹음</h3>
     <button id="start">녹음 시작</button>
     <button id="stop" disabled>녹음 종료 및 응답 생성</button>
+    <h3>MP3 기준 파일 테스트</h3>
+    <p class="diagnostic">마이크와 VAD를 거치지 않고 MP3를 Groq STT → LLM → TTS로 전달합니다.</p>
+    <input id="mp3File" type="file" accept="audio/mpeg,.mp3">
+    <button id="uploadMp3" type="button">MP3 업로드 및 응답 생성</button>
     <p id="status" class="status">준비됨</p>
     <details>
       <summary>개발용 원본 녹음 확인</summary>
@@ -82,6 +89,8 @@
     const API_BASE = "http://127.0.0.1:8000";
     const startButton = document.querySelector("#start");
     const stopButton = document.querySelector("#stop");
+    const mp3FileInput = document.querySelector("#mp3File");
+    const uploadMp3Button = document.querySelector("#uploadMp3");
     const statusElement = document.querySelector("#status");
     const recordingElement = document.querySelector("#recording");
     const recordingInfoElement = document.querySelector("#recordingInfo");
@@ -108,6 +117,7 @@
     let detectedSpeechMs = 0;
     let peakInputRms = 0;
     let activeSpeechRmsThreshold = 0.003;
+    let uploadedAudioFile;
 
     const MIN_SPEECH_RMS_THRESHOLD = 0.0025;
     const MAX_SPEECH_RMS_THRESHOLD = 0.012;
@@ -240,6 +250,7 @@
     }
 
     function recordingExtension(mimeType) {
+      if (mimeType.includes("mpeg") || mimeType.includes("mp3")) return "mp3";
       if (mimeType.includes("mp4")) return "m4a";
       if (mimeType.includes("ogg")) return "ogg";
       return "webm";
@@ -291,6 +302,7 @@
         statusElement.className = "status";
         startButton.disabled = true;
         stopButton.disabled = false;
+        uploadMp3Button.disabled = true;
       } catch (error) {
         statusElement.textContent = error.message;
         statusElement.className = "status error";
@@ -311,18 +323,58 @@
       recorder.stop();
     });
 
+    uploadMp3Button.addEventListener("click", async () => {
+      const file = mp3FileInput.files?.[0];
+      try {
+        if (selectedCharacters().length === 0) {
+          throw new Error("캐릭터를 한 명 이상 선택하세요.");
+        }
+        if (!file) {
+          throw new Error("테스트할 MP3 파일을 선택하세요.");
+        }
+        if (!file.name.toLowerCase().endsWith(".mp3")) {
+          throw new Error("현재 기준 테스트는 MP3 파일만 지원합니다.");
+        }
+        if (file.size > 20 * 1024 * 1024) {
+          throw new Error("MP3 파일은 20MB 이하여야 합니다.");
+        }
+        await ensurePlaybackAudio();
+        uploadedAudioFile = file;
+        startButton.disabled = true;
+        stopButton.disabled = true;
+        uploadMp3Button.disabled = true;
+        statusElement.textContent = "업로드한 MP3를 처리하고 있습니다...";
+        await processRecording();
+      } catch (error) {
+        uploadedAudioFile = undefined;
+        startButton.disabled = false;
+        uploadMp3Button.disabled = false;
+        statusElement.textContent = error.message;
+        statusElement.className = "status error";
+      }
+    });
+
     async function processRecording() {
       try {
         stopVoiceActivityDetection();
         closeMicrophoneStream();
-        const mimeType = recorder.mimeType || chunks[0]?.type || "audio/webm";
-        const audioBlob = new Blob(chunks, { type: mimeType });
+        const isUploadedFile = Boolean(uploadedAudioFile);
+        const mimeType = isUploadedFile
+          ? (uploadedAudioFile.type || "audio/mpeg")
+          : (recorder.mimeType || chunks[0]?.type || "audio/webm");
+        const audioBlob = isUploadedFile
+          ? uploadedAudioFile
+          : new Blob(chunks, { type: mimeType });
         if (audioBlob.size < 1000) {
           throw new Error(`녹음 파일이 너무 작습니다 (${audioBlob.size} bytes). 다시 녹음하세요.`);
         }
 
-        statusElement.textContent = "원본 녹음을 MP3로 변환하고 있습니다...";
-        const mp3Blob = await convertRecordingToMp3(audioBlob, mimeType);
+        statusElement.textContent = isUploadedFile
+          ? "업로드한 MP3를 확인하고 있습니다..."
+          : "원본 녹음을 MP3로 변환하고 있습니다...";
+        const mp3Blob = isUploadedFile
+          ? audioBlob
+          : await convertRecordingToMp3(audioBlob, mimeType);
         if (recordingUrl) URL.revokeObjectURL(recordingUrl);
         recordingUrl = URL.createObjectURL(mp3Blob);
         recordingElement.src = recordingUrl;
@@ -332,15 +384,17 @@
         downloadRecordingElement.download = "recording.mp3";
         downloadRecordingElement.textContent = "MP3 녹음 파일 다운로드";
         downloadRecordingElement.hidden = false;
-        recordingInfoElement.textContent = [
-          `원본 ${(audioBlob.size / 1024).toFixed(1)} KiB ${mimeType}`,
-          `MP3 ${(mp3Blob.size / 1024).toFixed(1)} KiB`,
-          `음성 감지 ${(detectedSpeechMs / 1000).toFixed(2)}초`,
-          `최고 RMS ${peakInputRms.toFixed(4)}`,
-          `감지 기준 RMS ${activeSpeechRmsThreshold.toFixed(4)}`
-        ].join(" · ");
+        recordingInfoElement.textContent = isUploadedFile
+          ? `업로드 MP3 ${(mp3Blob.size / 1024).toFixed(1)} KiB · 마이크/VAD 검사 생략`
+          : [
+              `원본 ${(audioBlob.size / 1024).toFixed(1)} KiB ${mimeType}`,
+              `MP3 ${(mp3Blob.size / 1024).toFixed(1)} KiB`,
+              `음성 감지 ${(detectedSpeechMs / 1000).toFixed(2)}초`,
+              `최고 RMS ${peakInputRms.toFixed(4)}`,
+              `감지 기준 RMS ${activeSpeechRmsThreshold.toFixed(4)}`
+            ].join(" · ");
 
-        if (detectedSpeechMs < MIN_DETECTED_SPEECH_MS) {
+        if (!isUploadedFile && detectedSpeechMs < MIN_DETECTED_SPEECH_MS) {
           statusElement.textContent = [
             "사람의 음성이 충분히 감지되지 않아 Groq STT 요청을 보내지 않았습니다.",
             "개발용 원본 녹음 확인에서 마이크 입력을 들어보세요."
@@ -351,7 +405,11 @@
 
         statusElement.textContent = "Groq Whisper가 음성을 인식하고 있습니다...";
         const formData = new FormData();
-        formData.append("file", audioBlob, `recording.${recordingExtension(mimeType)}`);
+        formData.append(
+          "file",
+          audioBlob,
+          isUploadedFile ? uploadedAudioFile.name : `recording.${recordingExtension(mimeType)}`
+        );
         formData.append("language", "ko");
         const sttResponse = await fetch(`${API_BASE}/api/v1/stt/transcriptions`, {
           method: "POST",
@@ -440,9 +498,11 @@
         statusElement.className = "status error";
         console.error(error);
       } finally {
+        uploadedAudioFile = undefined;
         stopVoiceActivityDetection();
         closeMicrophoneStream();
         startButton.disabled = false;
+        uploadMp3Button.disabled = false;
       }
     }
 
