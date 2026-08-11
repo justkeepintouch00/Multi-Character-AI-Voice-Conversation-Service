@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>음성 대화 파이프라인 테스트</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { max-width: 760px; margin: 40px auto; padding: 0 20px; background: #111827; color: #f3f4f6; }
+    section { background: #1f2937; border: 1px solid #374151; border-radius: 14px; padding: 20px; margin: 16px 0; }
+    button { border: 0; border-radius: 10px; padding: 12px 18px; margin-right: 8px; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+    #start { background: #22c55e; color: #052e16; }
+    #stop { background: #ef4444; color: white; }
+    .status { color: #93c5fd; min-height: 1.5em; }
+    .diagnostic { color: #cbd5e1; font-size: .92rem; }
+    .ok { color: #86efac; }
+    .error { color: #fca5a5; }
+    .turn { border-top: 1px solid #374151; padding-top: 14px; margin-top: 14px; }
+    audio { width: 100%; margin-top: 8px; }
+    a { color: #93c5fd; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #111827; padding: 12px; border-radius: 8px; }
+    label { display: inline-flex; gap: 6px; margin-right: 14px; }
+  </style>
+</head>
+<body>
+  <h1>마이크 → Groq STT → Scene Director → Typecast</h1>
+  <p>제품 UI와 분리된 로컬 개발용 테스트 화면입니다.</p>
+
+  <section>
+    <h2>0. 서버 및 공급자 상태</h2>
+    <p id="providerStatus" class="diagnostic">확인 중...</p>
+    <button id="recheck" type="button">상태 다시 확인</button>
+  </section>
+
+  <section>
+    <h2>1. 대화 캐릭터</h2>
+    <label><input id="characterA" type="checkbox" checked> character_a</label>
+    <label><input id="characterB" type="checkbox" checked> character_b</label>
+    <p><button id="resetConversation" type="button">대화 기록 초기화</button></p>
+    <p id="historyStatus" class="diagnostic">대화 기록: 0개 메시지</p>
+  </section>
+
+  <section>
+    <h2>2. 음성 입력</h2>
+    <button id="start">녹음 시작</button>
+    <button id="stop" disabled>녹음 종료 및 응답 생성</button>
+    <p id="status" class="status">준비됨</p>
+    <details>
+      <summary>개발용 원본 녹음 확인</summary>
+      <p id="recordingInfo" class="diagnostic">아직 녹음 파일이 없습니다.</p>
+      <audio id="recording" controls preload="metadata" hidden></audio>
+      <p><a id="downloadRecording" hidden>원본 녹음 파일 다운로드</a></p>
+    </details>
+  </section>
+
+  <section>
+    <h2>3. LLM에 실제로 전달된 사용자 문장</h2>
+    <p class="diagnostic">아래 문장은 Groq Whisper의 STT 결과이며 Scene Director의 user_text로 그대로 전달됩니다.</p>
+    <pre id="transcript">아직 결과가 없습니다.</pre>
+    <p id="sttSummary" class="diagnostic">STT 진단 정보: 아직 없음</p>
+    <details>
+      <summary>Whisper verbose_json 세그먼트 보기</summary>
+      <pre id="sttSegments">[]</pre>
+    </details>
+  </section>
+
+  <section>
+    <h2>4. LLM 응답 및 자동 음성 재생</h2>
+    <p class="diagnostic">Typecast 음성이 준비되는 즉시 캐릭터 순서대로 자동 재생됩니다.</p>
+    <div id="turns">아직 결과가 없습니다.</div>
+  </section>
+
+  <section>
+    <details>
+      <summary>ScenePlan JSON 보기</summary>
+      <pre id="scenePlan">{}</pre>
+    </details>
+  </section>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+    const startButton = document.querySelector("#start");
+    const stopButton = document.querySelector("#stop");
+    const statusElement = document.querySelector("#status");
+    const recordingElement = document.querySelector("#recording");
+    const recordingInfoElement = document.querySelector("#recordingInfo");
+    const downloadRecordingElement = document.querySelector("#downloadRecording");
+    const transcriptElement = document.querySelector("#transcript");
+    const sttSummaryElement = document.querySelector("#sttSummary");
+    const sttSegmentsElement = document.querySelector("#sttSegments");
+    const turnsElement = document.querySelector("#turns");
+    const scenePlanElement = document.querySelector("#scenePlan");
+    const providerStatusElement = document.querySelector("#providerStatus");
+    const recheckButton = document.querySelector("#recheck");
+    const resetConversationButton = document.querySelector("#resetConversation");
+    const historyStatusElement = document.querySelector("#historyStatus");
+
+    let recorder;
+    let microphoneStream;
+    let chunks = [];
+    let playbackAudioContext;
+    let conversationHistory = [];
+    let recordingUrl;
+    let captureSource;
+    let captureAnalyser;
+    let vadAnimationFrame;
+    let detectedSpeechMs = 0;
+    let peakInputRms = 0;
+    let activeSpeechRmsThreshold = 0.003;
+
+    const MIN_SPEECH_RMS_THRESHOLD = 0.0025;
+    const MAX_SPEECH_RMS_THRESHOLD = 0.012;
+    const VAD_CALIBRATION_MS = 400;
+    const MIN_DETECTED_SPEECH_MS = 150;
+
+    function selectedCharacters() {
+      const result = [];
+      if (document.querySelector("#characterA").checked) result.push("character_a");
+      if (document.querySelector("#characterB").checked) result.push("character_b");
+      return result;
+    }
+
+    async function apiError(response, stage) {
+      const body = await response.text();
+      throw new Error(`${stage} 실패 (HTTP ${response.status}): ${body}`);
+    }
+
+    async function checkProviderStatus() {
+      providerStatusElement.className = "diagnostic";
+      providerStatusElement.textContent = "FastAPI와 공급자 설정을 확인하고 있습니다...";
+      try {
+        const response = await fetch(`${API_BASE}/health/providers`, { cache: "no-store" });
+        const payload = await response.json();
+        const groq = payload.groq?.configured ? "설정됨" : "미설정";
+        const typecast = payload.typecast?.configured ? "설정됨" : "미설정";
+        providerStatusElement.textContent = `FastAPI 연결됨 · Groq ${groq} · Typecast ${typecast}`;
+        providerStatusElement.className = payload.groq?.configured && payload.typecast?.configured
+          ? "diagnostic ok"
+          : "diagnostic error";
+        return payload;
+      } catch (error) {
+        providerStatusElement.textContent = `상태 확인 실패: ${error.message}`;
+        providerStatusElement.className = "diagnostic error";
+        return null;
+      }
+    }
+
+    async function ensurePlaybackAudio() {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) {
+        throw new Error("이 브라우저는 자동 음성 재생을 지원하지 않습니다.");
+      }
+      if (!playbackAudioContext || playbackAudioContext.state === "closed") {
+        playbackAudioContext = new AudioContextClass();
+      }
+      if (playbackAudioContext.state !== "running") await playbackAudioContext.resume();
+    }
+
+    async function playTtsAudio(arrayBuffer) {
+      await ensurePlaybackAudio();
+      const decodedAudio = await playbackAudioContext.decodeAudioData(arrayBuffer.slice(0));
+      const source = playbackAudioContext.createBufferSource();
+      source.buffer = decodedAudio;
+      source.connect(playbackAudioContext.destination);
+      await new Promise((resolve, reject) => {
+        source.addEventListener("ended", resolve, { once: true });
+        try {
+          source.start();
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }
+
+    async function startVoiceActivityDetection(stream) {
+      await ensurePlaybackAudio();
+      captureSource = playbackAudioContext.createMediaStreamSource(stream);
+      captureAnalyser = playbackAudioContext.createAnalyser();
+      captureAnalyser.fftSize = 1024;
+      captureAnalyser.smoothingTimeConstant = 0.2;
+      captureSource.connect(captureAnalyser);
+
+      detectedSpeechMs = 0;
+      peakInputRms = 0;
+      activeSpeechRmsThreshold = MIN_SPEECH_RMS_THRESHOLD;
+      const samples = new Uint8Array(captureAnalyser.fftSize);
+      const calibrationSamples = [];
+      const detectionStartedAt = performance.now();
+      let calibrationCompleted = false;
+      let previousTimestamp = performance.now();
+      const measure = timestamp => {
+        const elapsedMs = Math.min(timestamp - previousTimestamp, 100);
+        previousTimestamp = timestamp;
+        captureAnalyser.getByteTimeDomainData(samples);
+        let sumSquares = 0;
+        for (const sample of samples) {
+          const normalized = (sample - 128) / 128;
+          sumSquares += normalized * normalized;
+        }
+        const rms = Math.sqrt(sumSquares / samples.length);
+        peakInputRms = Math.max(peakInputRms, rms);
+        if (!calibrationCompleted) {
+          calibrationSamples.push({ rms, elapsedMs });
+          if (timestamp - detectionStartedAt >= VAD_CALIBRATION_MS) {
+            const sortedRms = calibrationSamples
+              .map(sample => sample.rms)
+              .sort((left, right) => left - right);
+            const quietIndex = Math.floor(sortedRms.length * 0.2);
+            const estimatedNoiseRms = sortedRms[quietIndex] || 0;
+            activeSpeechRmsThreshold = Math.min(
+              Math.max(estimatedNoiseRms * 2.2, MIN_SPEECH_RMS_THRESHOLD),
+              MAX_SPEECH_RMS_THRESHOLD
+            );
+            detectedSpeechMs += calibrationSamples
+              .filter(sample => sample.rms >= activeSpeechRmsThreshold)
+              .reduce((total, sample) => total + sample.elapsedMs, 0);
+            calibrationCompleted = true;
+          }
+        } else if (rms >= activeSpeechRmsThreshold) {
+          detectedSpeechMs += elapsedMs;
+        }
+        vadAnimationFrame = requestAnimationFrame(measure);
+      };
+      vadAnimationFrame = requestAnimationFrame(measure);
+    }
+
+    function stopVoiceActivityDetection() {
+      if (vadAnimationFrame) cancelAnimationFrame(vadAnimationFrame);
+      vadAnimationFrame = undefined;
+      captureSource?.disconnect();
+      captureAnalyser?.disconnect();
+      captureSource = undefined;
+      captureAnalyser = undefined;
+    }
+
+    function closeMicrophoneStream() {
+      microphoneStream?.getTracks().forEach(track => track.stop());
+      microphoneStream = undefined;
+    }
+
+    function recordingExtension(mimeType) {
+      if (mimeType.includes("mp4")) return "m4a";
+      if (mimeType.includes("ogg")) return "ogg";
+      return "webm";
+    }
+
+    async function convertRecordingToMp3(audioBlob, mimeType) {
+      const formData = new FormData();
+      formData.append(
+        "file",
+        audioBlob,
+        `recording.${recordingExtension(mimeType)}`
+      );
+      const response = await fetch(`${API_BASE}/api/v1/audio/convert/mp3`, {
+        method: "POST",
+        body: formData
+      });
+      if (!response.ok) await apiError(response, "MP3 변환");
+      return response.blob();
+    }
+
+    startButton.addEventListener("click", async () => {
+      try {
+        if (selectedCharacters().length === 0) {
+          throw new Error("캐릭터를 한 명 이상 선택하세요.");
+        }
+        await ensurePlaybackAudio();
+        microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const preferredType = [
+          "audio/webm;codecs=opus",
+          "audio/webm",
+          "audio/mp4",
+          "audio/ogg;codecs=opus"
+        ].find(type => MediaRecorder.isTypeSupported(type));
+        recorder = preferredType
+          ? new MediaRecorder(microphoneStream, { mimeType: preferredType })
+          : new MediaRecorder(microphoneStream);
+        chunks = [];
+        recorder.addEventListener("dataavailable", event => {
+          if (event.data.size > 0) chunks.push(event.data);
+        });
+        recorder.addEventListener("stop", processRecording, { once: true });
+        recorder.addEventListener("error", event => {
+          statusElement.textContent = `녹음 실패: ${event.error?.message || "MediaRecorder 오류"}`;
+          statusElement.className = "status error";
+        });
+        recorder.start(250);
+        await startVoiceActivityDetection(microphoneStream);
+        statusElement.textContent = "녹음 중입니다. 자연스럽게 말한 뒤 종료 버튼을 누르세요.";
+        statusElement.className = "status";
+        startButton.disabled = true;
+        stopButton.disabled = false;
+      } catch (error) {
+        statusElement.textContent = error.message;
+        statusElement.className = "status error";
+        stopVoiceActivityDetection();
+        closeMicrophoneStream();
+      }
+    });
+
+    stopButton.addEventListener("click", () => {
+      stopButton.disabled = true;
+      statusElement.textContent = "녹음을 처리하고 있습니다...";
+      if (!recorder || recorder.state !== "recording") {
+        statusElement.textContent = "종료할 녹음이 없습니다.";
+        return;
+      }
+      // MediaRecorder's stop event finalizes the last data chunk. The microphone
+      // tracks are closed inside processRecording only after that event fires.
+      recorder.stop();
+    });
+
+    async function processRecording() {
+      try {
+        stopVoiceActivityDetection();
+        closeMicrophoneStream();
+        const mimeType = recorder.mimeType || chunks[0]?.type || "audio/webm";
+        const audioBlob = new Blob(chunks, { type: mimeType });
+        if (audioBlob.size < 1000) {
+          throw new Error(`녹음 파일이 너무 작습니다 (${audioBlob.size} bytes). 다시 녹음하세요.`);
+        }
+
+        statusElement.textContent = "원본 녹음을 MP3로 변환하고 있습니다...";
+        const mp3Blob = await convertRecordingToMp3(audioBlob, mimeType);
+        if (recordingUrl) URL.revokeObjectURL(recordingUrl);
+        recordingUrl = URL.createObjectURL(mp3Blob);
+        recordingElement.src = recordingUrl;
+        recordingElement.hidden = false;
+        recordingElement.load();
+        downloadRecordingElement.href = recordingUrl;
+        downloadRecordingElement.download = "recording.mp3";
+        downloadRecordingElement.textContent = "MP3 녹음 파일 다운로드";
+        downloadRecordingElement.hidden = false;
+        recordingInfoElement.textContent = [
+          `원본 ${(audioBlob.size / 1024).toFixed(1)} KiB ${mimeType}`,
+          `MP3 ${(mp3Blob.size / 1024).toFixed(1)} KiB`,
+          `음성 감지 ${(detectedSpeechMs / 1000).toFixed(2)}초`,
+          `최고 RMS ${peakInputRms.toFixed(4)}`,
+          `감지 기준 RMS ${activeSpeechRmsThreshold.toFixed(4)}`
+        ].join(" · ");
+
+        if (detectedSpeechMs < MIN_DETECTED_SPEECH_MS) {
+          statusElement.textContent = [
+            "사람의 음성이 충분히 감지되지 않아 Groq STT 요청을 보내지 않았습니다.",
+            "개발용 원본 녹음 확인에서 마이크 입력을 들어보세요."
+          ].join(" ");
+          statusElement.className = "status error";
+          return;
+        }
+
+        statusElement.textContent = "Groq Whisper가 음성을 인식하고 있습니다...";
+        const formData = new FormData();
+        formData.append("file", audioBlob, `recording.${recordingExtension(mimeType)}`);
+        formData.append("language", "ko");
+        const sttResponse = await fetch(`${API_BASE}/api/v1/stt/transcriptions`, {
+          method: "POST",
+          body: formData
+        });
+        if (!sttResponse.ok) await apiError(sttResponse, "STT");
+        const transcription = await sttResponse.json();
+        transcriptElement.textContent = transcription.text;
+        const segments = transcription.segments || [];
+        const noSpeechValues = segments
+          .map(segment => segment.no_speech_prob)
+          .filter(value => typeof value === "number");
+        const logprobValues = segments
+          .map(segment => segment.avg_logprob)
+          .filter(value => typeof value === "number");
+        const maxNoSpeech = noSpeechValues.length ? Math.max(...noSpeechValues) : null;
+        const averageLogprob = logprobValues.length
+          ? logprobValues.reduce((sum, value) => sum + value, 0) / logprobValues.length
+          : null;
+        sttSummaryElement.textContent = [
+          `길이 ${transcription.duration_seconds ?? "미제공"}초`,
+          `세그먼트 ${segments.length}개`,
+          `최대 no_speech_prob ${maxNoSpeech?.toFixed(3) ?? "미제공"}`,
+          `평균 avg_logprob ${averageLogprob?.toFixed(3) ?? "미제공"}`
+        ].join(" · ");
+        sttSegmentsElement.textContent = JSON.stringify(segments, null, 2);
+
+        statusElement.textContent = "Scene Director가 말할 캐릭터를 결정하고 있습니다...";
+        const sceneResponse = await fetch(`${API_BASE}/api/v1/scene-plans`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_text: transcription.text,
+            character_ids: selectedCharacters(),
+            recent_messages: conversationHistory.slice(-12)
+          })
+        });
+        if (!sceneResponse.ok) await apiError(sceneResponse, "Scene Director");
+        const scenePlan = await sceneResponse.json();
+        scenePlanElement.textContent = JSON.stringify(scenePlan, null, 2);
+
+        turnsElement.replaceChildren();
+        conversationHistory.push({
+          role: "USER",
+          speaker_id: null,
+          content: transcription.text
+        });
+        for (const turn of scenePlan.turns) {
+          const container = document.createElement("div");
+          container.className = "turn";
+          const description = document.createElement("p");
+          description.textContent = `${turn.speaker_id} · ${turn.emotion}: ${turn.text}`;
+          container.append(description);
+          turnsElement.append(container);
+          conversationHistory.push({
+            role: "CHARACTER",
+            speaker_id: turn.speaker_id,
+            content: turn.text
+          });
+
+          statusElement.textContent = `${turn.speaker_id} 음성을 생성하고 있습니다...`;
+          const ttsResponse = await fetch(`${API_BASE}/api/v1/tts/stream`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              speaker_id: turn.speaker_id,
+              text: turn.text,
+              emotion: turn.emotion,
+              emotion_intensity: 1.0,
+              audio_format: "mp3"
+            })
+          });
+          if (!ttsResponse.ok) await apiError(ttsResponse, `TTS ${turn.speaker_id}`);
+          const audioBytes = await ttsResponse.arrayBuffer();
+          statusElement.textContent = `${turn.speaker_id} 자동 재생 중...`;
+          await playTtsAudio(audioBytes);
+        }
+
+        const silentCount = selectedCharacters().length - scenePlan.turns.length;
+        historyStatusElement.textContent = `대화 기록: ${conversationHistory.length}개 메시지`;
+        statusElement.textContent = silentCount > 0
+          ? `완료: ${scenePlan.turns.length}명 응답, ${silentCount}명 침묵`
+          : `완료: ${scenePlan.turns.length}명 응답`;
+      } catch (error) {
+        statusElement.textContent = error.message;
+        statusElement.className = "status error";
+        console.error(error);
+      } finally {
+        stopVoiceActivityDetection();
+        closeMicrophoneStream();
+        startButton.disabled = false;
+      }
+    }
+
+    recheckButton.addEventListener("click", checkProviderStatus);
+    resetConversationButton.addEventListener("click", () => {
+      conversationHistory = [];
+      historyStatusElement.textContent = "대화 기록: 0개 메시지";
+      transcriptElement.textContent = "아직 결과가 없습니다.";
+      sttSummaryElement.textContent = "STT 진단 정보: 아직 없음";
+      sttSegmentsElement.textContent = "[]";
+      turnsElement.textContent = "아직 결과가 없습니다.";
+      scenePlanElement.textContent = "{}";
+      statusElement.textContent = "대화 기록을 초기화했습니다.";
+    });
+    checkProviderStatus();
+  </script>
+</body>
+</html>

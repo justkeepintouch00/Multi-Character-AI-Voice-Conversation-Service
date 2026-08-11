@@ -13,3 +13,13 @@ class ServiceHealthResponse(BaseModel):
 class DatabaseHealthResponse(BaseModel):
     status: Literal["ok", "error"]
     database: Literal["connected", "disconnected"]
+
+
+class ProviderStatus(BaseModel):
+    configured: bool
+
+
+class ProviderHealthResponse(BaseModel):
+    status: Literal["ok", "error"]
+    groq: ProviderStatus
+    typecast: ProviderStatus
