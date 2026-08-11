@@ -48,6 +48,8 @@
     <h3>마이크 녹음</h3>
     <button id="start">녹음 시작</button>
     <button id="stop" disabled>녹음 종료 및 응답 생성</button>
+    <p id="microphoneDevice" class="diagnostic">사용 중인 마이크: 아직 확인하지 않음</p>
+    <p id="vadStatus" class="diagnostic">입력 음량: 아직 측정하지 않음</p>
     <h3>음성 파일 기준 테스트</h3>
     <p class="diagnostic">마이크와 VAD를 거치지 않고 MP3 또는 M4A를 Groq STT → LLM → TTS로 전달합니다.</p>
     <input id="audioFile" type="file" accept="audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a,.mp3,.m4a">
@@ -89,6 +91,8 @@
     const API_BASE = "http://127.0.0.1:8000";
     const startButton = document.querySelector("#start");
     const stopButton = document.querySelector("#stop");
+    const microphoneDeviceElement = document.querySelector("#microphoneDevice");
+    const vadStatusElement = document.querySelector("#vadStatus");
     const audioFileInput = document.querySelector("#audioFile");
     const uploadAudioButton = document.querySelector("#uploadAudio");
     const statusElement = document.querySelector("#status");
@@ -117,12 +121,13 @@
     let detectedSpeechMs = 0;
     let peakInputRms = 0;
     let activeSpeechRmsThreshold = 0.003;
+    let lastVadStatusUpdateAt = 0;
     let uploadedAudioFile;
 
-    const MIN_SPEECH_RMS_THRESHOLD = 0.0025;
-    const MAX_SPEECH_RMS_THRESHOLD = 0.012;
+    const MIN_SPEECH_RMS_THRESHOLD = 0.0008;
+    const MAX_SPEECH_RMS_THRESHOLD = 0.008;
     const VAD_CALIBRATION_MS = 400;
-    const MIN_DETECTED_SPEECH_MS = 150;
+    const MIN_DETECTED_SPEECH_MS = 100;
 
     function selectedCharacters() {
       const result = [];
@@ -194,7 +199,8 @@
       detectedSpeechMs = 0;
       peakInputRms = 0;
       activeSpeechRmsThreshold = MIN_SPEECH_RMS_THRESHOLD;
-      const samples = new Uint8Array(captureAnalyser.fftSize);
+      lastVadStatusUpdateAt = 0;
+      const samples = new Float32Array(captureAnalyser.fftSize);
       const calibrationSamples = [];
       const detectionStartedAt = performance.now();
       let calibrationCompleted = false;
@@ -202,11 +208,10 @@
       const measure = timestamp => {
         const elapsedMs = Math.min(timestamp - previousTimestamp, 100);
         previousTimestamp = timestamp;
-        captureAnalyser.getByteTimeDomainData(samples);
+        captureAnalyser.getFloatTimeDomainData(samples);
         let sumSquares = 0;
         for (const sample of samples) {
-          const normalized = (sample - 128) / 128;
-          sumSquares += normalized * normalized;
+          sumSquares += sample * sample;
         }
         const rms = Math.sqrt(sumSquares / samples.length);
         peakInputRms = Math.max(peakInputRms, rms);
@@ -219,16 +224,26 @@
             const quietIndex = Math.floor(sortedRms.length * 0.2);
             const estimatedNoiseRms = sortedRms[quietIndex] || 0;
             activeSpeechRmsThreshold = Math.min(
-              Math.max(estimatedNoiseRms * 2.2, MIN_SPEECH_RMS_THRESHOLD),
+              Math.max(estimatedNoiseRms * 2.0, MIN_SPEECH_RMS_THRESHOLD),
               MAX_SPEECH_RMS_THRESHOLD
             );
             detectedSpeechMs += calibrationSamples
               .filter(sample => sample.rms >= activeSpeechRmsThreshold)
               .reduce((total, sample) => total + sample.elapsedMs, 0);
             calibrationCompleted = true;
+            statusElement.textContent = "녹음 중입니다. 지금 말씀하세요.";
           }
         } else if (rms >= activeSpeechRmsThreshold) {
           detectedSpeechMs += elapsedMs;
+        }
+        if (timestamp - lastVadStatusUpdateAt >= 200) {
+          const detectionLabel = calibrationCompleted && rms >= activeSpeechRmsThreshold
+            ? " · 음성 감지됨"
+            : "";
+          vadStatusElement.textContent = calibrationCompleted
+            ? `현재 RMS ${rms.toFixed(5)} · 감지 기준 ${activeSpeechRmsThreshold.toFixed(5)} · 최고 RMS ${peakInputRms.toFixed(5)}${detectionLabel}`
+            : `주변 소음 측정 중 · 현재 RMS ${rms.toFixed(5)}`;
+          lastVadStatusUpdateAt = timestamp;
         }
         vadAnimationFrame = requestAnimationFrame(measure);
       };
@@ -277,7 +292,22 @@
           throw new Error("캐릭터를 한 명 이상 선택하세요.");
         }
         await ensurePlaybackAudio();
-        microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        microphoneStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: { ideal: 1 },
+            autoGainControl: { ideal: true },
+            noiseSuppression: { ideal: true },
+            echoCancellation: { ideal: true }
+          }
+        });
+        const microphoneTrack = microphoneStream.getAudioTracks()[0];
+        const microphoneSettings = microphoneTrack?.getSettings?.() || {};
+        microphoneDeviceElement.textContent = [
+          `사용 중인 마이크: ${microphoneTrack?.label || "이름 확인 불가"}`,
+          `샘플레이트 ${microphoneSettings.sampleRate || "미보고"}`,
+          `자동 게인 ${microphoneSettings.autoGainControl ?? "미보고"}`,
+          `노이즈 억제 ${microphoneSettings.noiseSuppression ?? "미보고"}`
+        ].join(" · ");
         const preferredType = [
           "audio/webm;codecs=opus",
           "audio/webm",
@@ -296,10 +326,10 @@
           statusElement.textContent = `녹음 실패: ${event.error?.message || "MediaRecorder 오류"}`;
           statusElement.className = "status error";
         });
+        statusElement.textContent = "0.4초 동안 주변 소음을 측정합니다. 잠시 말하지 마세요.";
+        statusElement.className = "status";
         recorder.start(250);
         await startVoiceActivityDetection(microphoneStream);
-        statusElement.textContent = "녹음 중입니다. 자연스럽게 말한 뒤 종료 버튼을 누르세요.";
-        statusElement.className = "status";
         startButton.disabled = true;
         stopButton.disabled = false;
         uploadAudioButton.disabled = true;
