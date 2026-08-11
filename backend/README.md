@@ -10,7 +10,7 @@
 - `GET /health`: FastAPI 프로세스 상태 확인
 - `GET /health/db`: PostgreSQL 연결 상태 확인
 
-기능 API 계약은 `docs/20260810_1638_API_CONTRACT.md`에 있다. 캐릭터·대화·메시지 기능 API의 실제 처리 로직은 아직 구현 전이다.
+기능 API 계약은 `docs/20260810_1714_API_DESIGN.md`에 있다. 캐릭터·대화·메시지 기능 API의 실제 처리 로직은 아직 구현 전이다.
 
 ## SQLAlchemy와 Alembic의 역할
 
