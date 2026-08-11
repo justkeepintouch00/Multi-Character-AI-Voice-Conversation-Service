@@ -12,7 +12,7 @@
     button:disabled { opacity: .45; cursor: not-allowed; }
     #start { background: #22c55e; color: #052e16; }
     #stop { background: #ef4444; color: white; }
-    #uploadMp3 { background: #60a5fa; color: #172554; }
+    #uploadAudio { background: #60a5fa; color: #172554; }
     input[type="file"] { display: block; margin: 10px 0; }
     .status { color: #93c5fd; min-height: 1.5em; }
     .diagnostic { color: #cbd5e1; font-size: .92rem; }
@@ -48,10 +48,10 @@
     <h3>마이크 녹음</h3>
     <button id="start">녹음 시작</button>
     <button id="stop" disabled>녹음 종료 및 응답 생성</button>
-    <h3>MP3 기준 파일 테스트</h3>
-    <p class="diagnostic">마이크와 VAD를 거치지 않고 MP3를 Groq STT → LLM → TTS로 전달합니다.</p>
-    <input id="mp3File" type="file" accept="audio/mpeg,.mp3">
-    <button id="uploadMp3" type="button">MP3 업로드 및 응답 생성</button>
+    <h3>음성 파일 기준 테스트</h3>
+    <p class="diagnostic">마이크와 VAD를 거치지 않고 MP3 또는 M4A를 Groq STT → LLM → TTS로 전달합니다.</p>
+    <input id="audioFile" type="file" accept="audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a,.mp3,.m4a">
+    <button id="uploadAudio" type="button">음성 파일 업로드 및 응답 생성</button>
     <p id="status" class="status">준비됨</p>
     <details>
       <summary>개발용 원본 녹음 확인</summary>
@@ -89,8 +89,8 @@
     const API_BASE = "http://127.0.0.1:8000";
     const startButton = document.querySelector("#start");
     const stopButton = document.querySelector("#stop");
-    const mp3FileInput = document.querySelector("#mp3File");
-    const uploadMp3Button = document.querySelector("#uploadMp3");
+    const audioFileInput = document.querySelector("#audioFile");
+    const uploadAudioButton = document.querySelector("#uploadAudio");
     const statusElement = document.querySelector("#status");
     const recordingElement = document.querySelector("#recording");
     const recordingInfoElement = document.querySelector("#recordingInfo");
@@ -302,7 +302,7 @@
         statusElement.className = "status";
         startButton.disabled = true;
         stopButton.disabled = false;
-        uploadMp3Button.disabled = true;
+        uploadAudioButton.disabled = true;
       } catch (error) {
         statusElement.textContent = error.message;
         statusElement.className = "status error";
@@ -323,32 +323,33 @@
       recorder.stop();
     });
 
-    uploadMp3Button.addEventListener("click", async () => {
-      const file = mp3FileInput.files?.[0];
+    uploadAudioButton.addEventListener("click", async () => {
+      const file = audioFileInput.files?.[0];
       try {
         if (selectedCharacters().length === 0) {
           throw new Error("캐릭터를 한 명 이상 선택하세요.");
         }
         if (!file) {
-          throw new Error("테스트할 MP3 파일을 선택하세요.");
+          throw new Error("테스트할 MP3 또는 M4A 파일을 선택하세요.");
         }
-        if (!file.name.toLowerCase().endsWith(".mp3")) {
-          throw new Error("현재 기준 테스트는 MP3 파일만 지원합니다.");
+        const extension = file.name.toLowerCase().split(".").pop();
+        if (!['mp3', 'm4a'].includes(extension)) {
+          throw new Error("현재 기준 테스트는 MP3와 M4A 파일을 지원합니다.");
         }
         if (file.size > 20 * 1024 * 1024) {
-          throw new Error("MP3 파일은 20MB 이하여야 합니다.");
+          throw new Error("음성 파일은 20MB 이하여야 합니다.");
         }
         await ensurePlaybackAudio();
         uploadedAudioFile = file;
         startButton.disabled = true;
         stopButton.disabled = true;
-        uploadMp3Button.disabled = true;
-        statusElement.textContent = "업로드한 MP3를 처리하고 있습니다...";
+        uploadAudioButton.disabled = true;
+        statusElement.textContent = `업로드한 ${extension.toUpperCase()} 파일을 처리하고 있습니다...`;
         await processRecording();
       } catch (error) {
         uploadedAudioFile = undefined;
         startButton.disabled = false;
-        uploadMp3Button.disabled = false;
+        uploadAudioButton.disabled = false;
         statusElement.textContent = error.message;
         statusElement.className = "status error";
       }
@@ -359,8 +360,11 @@
         stopVoiceActivityDetection();
         closeMicrophoneStream();
         const isUploadedFile = Boolean(uploadedAudioFile);
+        const uploadedExtension = isUploadedFile
+          ? uploadedAudioFile.name.toLowerCase().split(".").pop()
+          : null;
         const mimeType = isUploadedFile
-          ? (uploadedAudioFile.type || "audio/mpeg")
+          ? (uploadedAudioFile.type || (uploadedExtension === "m4a" ? "audio/mp4" : "audio/mpeg"))
           : (recorder.mimeType || chunks[0]?.type || "audio/webm");
         const audioBlob = isUploadedFile
           ? uploadedAudioFile
@@ -370,25 +374,29 @@
         }
 
         statusElement.textContent = isUploadedFile
-          ? "업로드한 MP3를 확인하고 있습니다..."
+          ? `업로드한 ${uploadedExtension.toUpperCase()} 파일을 확인하고 있습니다...`
           : "원본 녹음을 MP3로 변환하고 있습니다...";
-        const mp3Blob = isUploadedFile
+        const playbackBlob = isUploadedFile
           ? audioBlob
           : await convertRecordingToMp3(audioBlob, mimeType);
         if (recordingUrl) URL.revokeObjectURL(recordingUrl);
-        recordingUrl = URL.createObjectURL(mp3Blob);
+        recordingUrl = URL.createObjectURL(playbackBlob);
         recordingElement.src = recordingUrl;
         recordingElement.hidden = false;
         recordingElement.load();
         downloadRecordingElement.href = recordingUrl;
-        downloadRecordingElement.download = "recording.mp3";
-        downloadRecordingElement.textContent = "MP3 녹음 파일 다운로드";
+        downloadRecordingElement.download = isUploadedFile
+          ? uploadedAudioFile.name
+          : "recording.mp3";
+        downloadRecordingElement.textContent = isUploadedFile
+          ? `${uploadedExtension.toUpperCase()} 업로드 파일 다운로드`
+          : "MP3 녹음 파일 다운로드";
         downloadRecordingElement.hidden = false;
         recordingInfoElement.textContent = isUploadedFile
-          ? `업로드 MP3 ${(mp3Blob.size / 1024).toFixed(1)} KiB · 마이크/VAD 검사 생략`
+          ? `업로드 ${uploadedExtension.toUpperCase()} ${(playbackBlob.size / 1024).toFixed(1)} KiB · 마이크/VAD 검사 생략`
           : [
               `원본 ${(audioBlob.size / 1024).toFixed(1)} KiB ${mimeType}`,
-              `MP3 ${(mp3Blob.size / 1024).toFixed(1)} KiB`,
+              `MP3 ${(playbackBlob.size / 1024).toFixed(1)} KiB`,
               `음성 감지 ${(detectedSpeechMs / 1000).toFixed(2)}초`,
               `최고 RMS ${peakInputRms.toFixed(4)}`,
               `감지 기준 RMS ${activeSpeechRmsThreshold.toFixed(4)}`
@@ -502,7 +510,7 @@
         stopVoiceActivityDetection();
         closeMicrophoneStream();
         startButton.disabled = false;
-        uploadMp3Button.disabled = false;
+        uploadAudioButton.disabled = false;
       }
     }
 
