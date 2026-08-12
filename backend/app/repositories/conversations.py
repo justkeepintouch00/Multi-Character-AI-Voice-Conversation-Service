@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -119,6 +119,7 @@ class SQLAlchemyConversationRepository:
             self.session.add(
                 Message(
                     conversation_id=conversation.id,
+                    created_at=datetime.now(timezone.utc),
                     speaker_type="CHARACTER",
                     speaker_user_id=None,
                     speaker_character_instance_id=context.character_instance_ids[
@@ -173,6 +174,7 @@ class SQLAlchemyConversationRepository:
     ) -> MessageRead:
         message = Message(
             conversation_id=conversation_id,
+            created_at=datetime.now(timezone.utc),
             speaker_type="USER",
             speaker_user_id=user_id,
             speaker_character_instance_id=None,
@@ -193,7 +195,11 @@ class SQLAlchemyConversationRepository:
             self.session.scalars(
                 select(Message)
                 .where(Message.conversation_id == conversation_id)
-                .order_by(Message.created_at.desc(), Message.id.desc())
+                .order_by(
+                    Message.created_at.desc(),
+                    case((Message.speaker_type == "CHARACTER", Message.scene_turn_index), else_=0).desc(),
+                    Message.id.desc(),
+                )
                 .limit(limit)
             )
         )
@@ -235,9 +241,11 @@ class SQLAlchemyConversationRepository:
         self.session.flush()
 
         messages: list[Message] = []
+        created_at = datetime.now(timezone.utc)
         for turn_index, turn in enumerate(plan.turns):
             message = Message(
                 conversation_id=conversation_id,
+                created_at=created_at,
                 speaker_type="CHARACTER",
                 speaker_user_id=None,
                 speaker_character_instance_id=context.character_instance_ids[
@@ -266,7 +274,12 @@ class SQLAlchemyConversationRepository:
             self.session.scalars(
                 select(Message)
                 .where(Message.conversation_id == conversation_id)
-                .order_by(Message.created_at.asc(), Message.id.asc())
+                .order_by(
+                    Message.created_at.asc(),
+                    case((Message.speaker_type == "USER", 0), else_=1).asc(),
+                    case((Message.speaker_type == "CHARACTER", Message.scene_turn_index), else_=0).asc(),
+                    Message.id.asc(),
+                )
                 .limit(limit)
             )
         )
