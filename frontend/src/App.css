@@ -260,17 +260,18 @@ button { font-family: inherit; }
 .captured-answer p { margin: 0; color: #343840; font-size: 11px; line-height: 1.55; }
 .captured-answer small { color: var(--muted); font-size: 7px; }
 .continue-button { width: 100%; min-height: 52px; }
-.snack-scenario-page .stage-snack-art { width: min(1280px, calc(100% - 40px)); min-height: 0; aspect-ratio: 16 / 9; margin: 20px auto; border: 1px solid #dfe1e8; border-radius: 18px; background-size: contain; box-shadow: 0 16px 42px rgba(35,39,53,.08); }
+.snack-scenario-page .stage-snack-art { width: min(1280px, calc(100% - 40px)); min-height: 0; aspect-ratio: 16 / 9; margin: 20px auto; border: 1px solid #292d39; border-radius: 18px; background-size: contain; box-shadow: 0 16px 42px rgba(35,39,53,.08); }
 .scene-conversation-layer { position: absolute; z-index: 5; right: 22px; bottom: 22px; left: 22px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, .72fr); gap: 10px; align-items: end; }
-.scene-conversation-layer .scene-narration { position: absolute; top: auto; bottom: calc(100% + 10px); left: 0; width: auto; transform: none; border: 1px solid rgba(255,255,255,.86); color: #353946; background: rgba(255,255,255,.9); box-shadow: 0 7px 20px rgba(34,38,50,.12); }
-.live-caption-card { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 11px; min-height: 76px; padding: 12px 14px; border: 1px solid rgba(220,223,232,.92); border-radius: 14px; color: #20232c; background: rgba(255,255,255,.94); box-shadow: 0 12px 30px rgba(24,28,39,.16); backdrop-filter: blur(12px); }
+.scene-conversation-layer.character-reaction { grid-template-columns: minmax(0, 720px); }
+.scene-conversation-layer .scene-narration { position: absolute; top: auto; bottom: calc(100% + 10px); left: 0; width: auto; transform: none; border: 1px solid rgba(255,255,255,.18); color: rgba(255,255,255,.76); background: rgba(7,9,15,.76); box-shadow: 0 7px 20px rgba(0,0,0,.22); }
+.live-caption-card { display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 11px; min-height: 76px; padding: 12px 14px; border: 1px solid rgba(255,255,255,.18); border-radius: 14px; color: #fff; background: rgba(7,9,15,.78); box-shadow: 0 12px 30px rgba(0,0,0,.26); backdrop-filter: blur(12px); }
 .live-caption-card .person-avatar { width: 42px; height: 42px; border-width: 2px; }
 .live-caption-card > div { display: grid; min-width: 0; gap: 4px; }
-.live-caption-card span { color: var(--primary-dark); font-size: 8px; font-weight: 850; }
+.live-caption-card span { color: #c4bcff; font-size: 8px; font-weight: 850; }
 .live-caption-card p { margin: 0; overflow: hidden; font-size: 11px; line-height: 1.5; text-overflow: ellipsis; }
-.live-caption-card > b { padding: 5px 7px; border-radius: 99px; color: #69707d; background: #f0f1f5; font-size: 6px; }
-.user-caption { border-color: #d6e8df; }
-.user-caption.has-speech > b { color: #18734b; background: #e6f7ee; }
+.live-caption-card > b { padding: 5px 7px; border-radius: 99px; color: #b9c1cd; background: rgba(255,255,255,.1); font-size: 6px; }
+.user-caption { border-color: rgba(126,218,167,.36); }
+.user-caption.has-speech > b { color: #9bf0c4; background: rgba(59,173,107,.24); }
 
 @media (max-width: 1180px) {
   .snack-interaction-dock { grid-template-columns: 190px 1fr; }
@@ -295,7 +296,7 @@ button { font-family: inherit; }
 .flow-policy-strip span { color: var(--primary-dark); font-size: 7px; font-weight: 850; }
 .flow-policy-strip strong { color: #555967; font-size: 8px; line-height: 1.45; }
 .flow-policy-strip i { width: 1px; height: 24px; background: #ddd9ee; }
-.flow-canvas-scroll { position: relative; height: 620px; margin: 10px 20px 14px; overflow: hidden; border: 1px solid #dfe1e8; border-radius: 12px; background: #f8f9fc; cursor: grab; touch-action: none; user-select: none; }
+.flow-canvas-scroll { position: relative; height: min(72vh, 900px); min-height: 720px; margin: 10px 20px 14px; overflow: auto; border: 1px solid #dfe1e8; border-radius: 12px; background: #f8f9fc; cursor: grab; touch-action: none; user-select: none; }
 .flow-canvas-scroll.is-panning { cursor: grabbing; }
 .flow-canvas { position: relative; width: 1040px; min-width: 1040px; background-color: #f9fafc; background-image: radial-gradient(#d7d9e2 1px, transparent 1px); background-size: 18px 18px; transform-origin: 0 0; will-change: transform; }
 .flow-connectors { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
@@ -414,7 +415,7 @@ button { font-family: inherit; }
 .flow-control-bar .reset-view { width: auto; padding: 0 9px; font-size: 7px; }
 .flow-add-branch-button { width: auto !important; padding: 0 9px; color: #fff !important; border-color: #5d4fe1 !important; background: #6d57ee !important; font-size: 7px !important; font-weight: 800; }
 .flow-add-branch-button:disabled { opacity: .4; }
-.node-delete-button { position: absolute; z-index: 8; display: grid; width: 22px; height: 22px; place-items: center; padding: 0; border: 1px solid #f0caca; border-radius: 50%; color: #b34f4f; background: #fff; font-size: 13px; line-height: 1; cursor: pointer; box-shadow: 0 4px 10px rgba(70,38,38,.12); }
+.node-delete-button { position: absolute; z-index: 8; display: grid; min-width: 40px; height: 22px; place-items: center; padding: 0 6px; border: 1px solid #f0caca; border-radius: 6px; color: #b34f4f; background: #fff; font-size: 7px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 10px rgba(70,38,38,.12); }
 .node-delete-button:hover { color: #fff; background: #c85959; }
 .flow-editing-badge { position: absolute; top: 8px; right: 9px; padding: 3px 5px; border-radius: 5px; color: #fff; background: #34465d; font-size: 6px; font-style: normal; font-weight: 850; }
 .branch-node.selected > span { padding-right: 44px; }
@@ -475,6 +476,8 @@ button { font-family: inherit; }
 .scene-input-port:disabled { opacity: .35; cursor: default; }
 .scene-input-port.ready { background: #50bf89; animation: port-pulse 1.25s ease-in-out infinite; }
 .flow-canvas-scroll.is-connecting { cursor: crosshair; }
+.scene-add-branch { position: absolute; z-index: 7; min-height: 28px; padding: 0 9px; border: 1px solid #63758a; border-radius: 999px; color: #34465d; background: #fff; font-size: 7px; font-weight: 850; box-shadow: 0 5px 12px rgba(38,48,65,.14); }
+.scene-add-branch:hover { color: #fff; background: #40556d; }
 @keyframes port-pulse { 50% { box-shadow: 0 0 0 6px rgba(80,191,137,.18), 0 4px 10px rgba(32,43,56,.24); } }
 
 @media (max-width: 1280px) {
