@@ -26,4 +26,3 @@ class TranscriptionResponse(BaseModel):
     primary_model: str | None = None
     primary_text: str | None = None
     primary_avg_logprob: float | None = None
-    language_mismatch: bool = False

@@ -216,11 +216,10 @@ class GroqTranscriptionProvider:
             primary_avg_logprob is not None
             and primary_avg_logprob < self.fallback_avg_logprob_threshold
         )
-        language_mismatch = primary_result.language_mismatch
         should_retry = (
             self.fallback_model is not None
             and self.fallback_model != self.model
-            and (low_confidence or language_mismatch)
+            and low_confidence
         )
         if not should_retry:
             return primary_result
@@ -239,17 +238,10 @@ class GroqTranscriptionProvider:
             segments=fallback_result.segments,
             model=fallback_result.model,
             fallback_used=True,
-            fallback_reason=(
-                "language_mismatch_and_low_confidence"
-                if language_mismatch and low_confidence
-                else "language_mismatch"
-                if language_mismatch
-                else "low_avg_logprob"
-            ),
+            fallback_reason="low_avg_logprob",
             primary_model=self.model,
             primary_text=primary_result.text,
             primary_avg_logprob=primary_avg_logprob,
-            language_mismatch=fallback_result.language_mismatch,
         )
 
     async def _transcribe_once(
@@ -339,7 +331,6 @@ class GroqTranscriptionProvider:
             duration_seconds=duration_seconds,
             segments=tuple(segments),
             model=model,
-            language_mismatch=_has_language_mismatch(text, language),
         )
 
 
@@ -360,18 +351,3 @@ def _average_segment_logprob(
     if not values:
         return None
     return sum(values) / len(values)
-
-
-def _has_language_mismatch(text: str, language: str) -> bool:
-    if language.lower() != "ko" or len(text.strip()) < 10:
-        return False
-    alphabetic_characters = [character for character in text if character.isalpha()]
-    if not alphabetic_characters:
-        return True
-    hangul_characters = [
-        character
-        for character in alphabetic_characters
-        if "\uac00" <= character <= "\ud7a3"
-        or "\u3131" <= character <= "\u318e"
-    ]
-    return len(hangul_characters) / len(alphabetic_characters) < 0.2

@@ -89,5 +89,4 @@ async def create_transcription(
         primary_model=result.primary_model,
         primary_text=result.primary_text,
         primary_avg_logprob=result.primary_avg_logprob,
-        language_mismatch=result.language_mismatch,
     )

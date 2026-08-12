@@ -138,9 +138,7 @@
 
     function fallbackReasonLabel(reason) {
       const labels = {
-        low_avg_logprob: "Turbo 신뢰도 낮음",
-        language_mismatch: "한국어 요청과 결과 언어 불일치",
-        language_mismatch_and_low_confidence: "언어 불일치 및 낮은 신뢰도"
+        low_avg_logprob: "Turbo 신뢰도 낮음"
       };
       return labels[reason] ?? reason ?? "미제공";
     }
@@ -508,15 +506,6 @@
             ].join("\n")
           : "";
         sttSegmentsElement.textContent = JSON.stringify(segments, null, 2);
-
-        if (transcription.language_mismatch) {
-          statusElement.textContent = [
-            "Large V3 재시도 후에도 한국어 발화가 한국어 문장으로 인식되지 않았습니다.",
-            "잘못된 문장을 LLM에 전달하지 않았습니다. 녹음 파일을 확인하거나 다시 녹음하세요."
-          ].join(" ");
-          statusElement.className = "status error";
-          return;
-        }
 
         if (
           typeof averageLogprob === "number"
