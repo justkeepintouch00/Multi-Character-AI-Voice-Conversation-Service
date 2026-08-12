@@ -31,8 +31,9 @@ STRICT_STRUCTURED_OUTPUT_MODELS = {
 }
 
 KOREAN_TRANSCRIPTION_PROMPT = (
-    "한국어 일상 감정 대화입니다. 관계, 고민, 평가받는 느낌, 공감받고 싶다, "
-    "조언은 필요 없다는 표현이 나올 수 있습니다. 자연스러운 한국어 문장부호를 사용합니다."
+    "Korean first-person conversational speech about AI-assisted software projects "
+    "and personal concerns. Possible terms: GPT, 프로젝트, 면접, 회사, 공감, 조언. "
+    "Transcribe the spoken wording verbatim; do not summarize or rewrite it."
 )
 
 
@@ -181,11 +182,15 @@ class GroqTranscriptionProvider:
         api_key: str | None,
         base_url: str,
         model: str,
+        fallback_model: str | None = None,
+        fallback_avg_logprob_threshold: float = -0.25,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.fallback_model = fallback_model
+        self.fallback_avg_logprob_threshold = fallback_avg_logprob_threshold
         self.transport = transport
 
     async def transcribe(
@@ -199,6 +204,51 @@ class GroqTranscriptionProvider:
         if not self.api_key:
             raise ProviderConfigurationError("groq", "GROQ_API_KEY is not configured")
 
+        primary_result = await self._transcribe_once(
+            filename=filename,
+            content=content,
+            content_type=content_type,
+            language=language,
+            model=self.model,
+        )
+        primary_avg_logprob = _average_segment_logprob(primary_result.segments)
+        should_retry = (
+            self.fallback_model is not None
+            and self.fallback_model != self.model
+            and primary_avg_logprob is not None
+            and primary_avg_logprob < self.fallback_avg_logprob_threshold
+        )
+        if not should_retry:
+            return primary_result
+
+        fallback_result = await self._transcribe_once(
+            filename=filename,
+            content=content,
+            content_type=content_type,
+            language=language,
+            model=self.fallback_model,
+        )
+        return TranscriptionResult(
+            text=fallback_result.text,
+            language=fallback_result.language,
+            duration_seconds=fallback_result.duration_seconds,
+            segments=fallback_result.segments,
+            model=fallback_result.model,
+            fallback_used=True,
+            primary_model=self.model,
+            primary_text=primary_result.text,
+            primary_avg_logprob=primary_avg_logprob,
+        )
+
+    async def _transcribe_once(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str,
+        language: str,
+        model: str,
+    ) -> TranscriptionResult:
         try:
             async with httpx.AsyncClient(
                 transport=self.transport,
@@ -209,7 +259,7 @@ class GroqTranscriptionProvider:
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     files={"file": (filename, content, content_type)},
                     data={
-                        "model": self.model,
+                        "model": model,
                         "language": language,
                         "prompt": (
                             KOREAN_TRANSCRIPTION_PROMPT
@@ -276,6 +326,7 @@ class GroqTranscriptionProvider:
             language=language,
             duration_seconds=duration_seconds,
             segments=tuple(segments),
+            model=model,
         )
 
 
@@ -283,3 +334,16 @@ def _optional_float(value: object) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+def _average_segment_logprob(
+    segments: tuple[TranscriptionSegment, ...],
+) -> float | None:
+    values = [
+        segment.avg_logprob
+        for segment in segments
+        if segment.avg_logprob is not None
+    ]
+    if not values:
+        return None
+    return sum(values) / len(values)

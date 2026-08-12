@@ -11,6 +11,8 @@ from app.config import (
     get_groq_base_url,
     get_groq_scene_max_attempts,
     get_groq_scene_model,
+    get_groq_transcription_fallback_avg_logprob_threshold,
+    get_groq_transcription_fallback_model,
     get_groq_transcription_model,
     get_typecast_api_key,
     get_typecast_base_url,
@@ -44,6 +46,10 @@ def get_stt_provider() -> STTProvider:
         api_key=get_groq_api_key(),
         base_url=get_groq_base_url(),
         model=get_groq_transcription_model(),
+        fallback_model=get_groq_transcription_fallback_model(),
+        fallback_avg_logprob_threshold=(
+            get_groq_transcription_fallback_avg_logprob_threshold()
+        ),
     )
 
 

@@ -197,6 +197,79 @@ def test_groq_transcription_sends_multipart_audio() -> None:
     assert result.duration_seconds == 1.8
     assert result.segments[0].avg_logprob == -0.12
     assert result.segments[0].no_speech_prob == 0.02
+    assert result.model == "whisper-large-v3-turbo"
+    assert result.fallback_used is False
+
+
+def test_groq_transcription_retries_large_v3_for_low_confidence_turbo() -> None:
+    requested_models: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        is_fallback = b"whisper-large-v3\r\n" in request.content
+        requested_models.append(
+            "whisper-large-v3" if is_fallback else "whisper-large-v3-turbo"
+        )
+        if not is_fallback:
+            return httpx.Response(
+                200,
+                json={
+                    "text": "왜곡된 1차 문장",
+                    "duration": 20.0,
+                    "segments": [
+                        {
+                            "id": 0,
+                            "start": 0.0,
+                            "end": 20.0,
+                            "text": "왜곡된 1차 문장",
+                            "avg_logprob": -0.292,
+                            "compression_ratio": 1.2,
+                            "no_speech_prob": 0.0,
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "text": "정확도가 개선된 최종 문장",
+                "duration": 20.0,
+                "segments": [
+                    {
+                        "id": 0,
+                        "start": 0.0,
+                        "end": 20.0,
+                        "text": "정확도가 개선된 최종 문장",
+                        "avg_logprob": -0.1,
+                        "compression_ratio": 1.1,
+                        "no_speech_prob": 0.0,
+                    }
+                ],
+            },
+        )
+
+    provider = GroqTranscriptionProvider(
+        api_key="test-key",
+        base_url="https://api.groq.test/openai/v1",
+        model="whisper-large-v3-turbo",
+        fallback_model="whisper-large-v3",
+        fallback_avg_logprob_threshold=-0.25,
+        transport=httpx.MockTransport(handler),
+    )
+    result = asyncio.run(
+        provider.transcribe(
+            filename="recording.webm",
+            content=b"fake-audio",
+            content_type="audio/webm",
+            language="ko",
+        )
+    )
+
+    assert requested_models == ["whisper-large-v3-turbo", "whisper-large-v3"]
+    assert result.text == "정확도가 개선된 최종 문장"
+    assert result.model == "whisper-large-v3"
+    assert result.fallback_used is True
+    assert result.primary_text == "왜곡된 1차 문장"
+    assert result.primary_avg_logprob == -0.292
 
 
 def test_scene_director_defaults_to_one_speaker_without_distinct_view() -> None:
@@ -208,6 +281,9 @@ def test_scene_director_defaults_to_one_speaker_without_distinct_view() -> None:
     assert "변명 없이 사과" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "추가 설명 요구" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "조언, 해결책, 원인 분석을 하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "3~5문장으로 충분히 반영" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "같은 내용을 다시 요구하는 질문을 하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "정서적으로 정상화" in SCENE_DIRECTOR_INSTRUCTIONS
 
 
 def test_typecast_tts_stream_maps_domain_emotion() -> None:

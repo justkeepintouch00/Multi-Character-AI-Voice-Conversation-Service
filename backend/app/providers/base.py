@@ -55,6 +55,11 @@ class TranscriptionResult:
     language: str
     duration_seconds: float | None = None
     segments: tuple[TranscriptionSegment, ...] = ()
+    model: str | None = None
+    fallback_used: bool = False
+    primary_model: str | None = None
+    primary_text: str | None = None
+    primary_avg_logprob: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

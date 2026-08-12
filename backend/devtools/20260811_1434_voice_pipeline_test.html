@@ -68,6 +68,10 @@
     <p class="diagnostic">아래 문장은 Groq Whisper의 STT 결과이며 Scene Director의 user_text로 그대로 전달됩니다.</p>
     <pre id="transcript">아직 결과가 없습니다.</pre>
     <p id="sttSummary" class="diagnostic">STT 진단 정보: 아직 없음</p>
+    <details id="sttFallbackDetails" hidden>
+      <summary>Turbo 1차 결과와 Large V3 최종 결과 비교</summary>
+      <pre id="sttFallbackComparison"></pre>
+    </details>
     <details>
       <summary>Whisper verbose_json 세그먼트 보기</summary>
       <pre id="sttSegments">[]</pre>
@@ -101,6 +105,8 @@
     const downloadRecordingElement = document.querySelector("#downloadRecording");
     const transcriptElement = document.querySelector("#transcript");
     const sttSummaryElement = document.querySelector("#sttSummary");
+    const sttFallbackDetailsElement = document.querySelector("#sttFallbackDetails");
+    const sttFallbackComparisonElement = document.querySelector("#sttFallbackComparison");
     const sttSegmentsElement = document.querySelector("#sttSegments");
     const turnsElement = document.querySelector("#turns");
     const scenePlanElement = document.querySelector("#scenePlan");
@@ -469,11 +475,26 @@
           ? logprobValues.reduce((sum, value) => sum + value, 0) / logprobValues.length
           : null;
         sttSummaryElement.textContent = [
+          `최종 모델 ${transcription.model ?? "미제공"}`,
+          `Large V3 재시도 ${transcription.fallback_used ? "사용" : "미사용"}`,
+          transcription.fallback_used
+            ? `Turbo 1차 avg_logprob ${transcription.primary_avg_logprob?.toFixed(3) ?? "미제공"}`
+            : null,
           `길이 ${transcription.duration_seconds ?? "미제공"}초`,
           `세그먼트 ${segments.length}개`,
           `최대 no_speech_prob ${maxNoSpeech?.toFixed(3) ?? "미제공"}`,
-          `평균 avg_logprob ${averageLogprob?.toFixed(3) ?? "미제공"}`
-        ].join(" · ");
+          `최종 avg_logprob ${averageLogprob?.toFixed(3) ?? "미제공"}`
+        ].filter(Boolean).join(" · ");
+        sttFallbackDetailsElement.hidden = !transcription.fallback_used;
+        sttFallbackComparisonElement.textContent = transcription.fallback_used
+          ? [
+              `[1차 ${transcription.primary_model}]`,
+              transcription.primary_text ?? "미제공",
+              "",
+              `[최종 ${transcription.model}]`,
+              transcription.text
+            ].join("\n")
+          : "";
         sttSegmentsElement.textContent = JSON.stringify(segments, null, 2);
 
         if (
@@ -564,6 +585,8 @@
       historyStatusElement.textContent = "대화 기록: 0개 메시지";
       transcriptElement.textContent = "아직 결과가 없습니다.";
       sttSummaryElement.textContent = "STT 진단 정보: 아직 없음";
+      sttFallbackDetailsElement.hidden = true;
+      sttFallbackComparisonElement.textContent = "";
       sttSegmentsElement.textContent = "[]";
       turnsElement.textContent = "아직 결과가 없습니다.";
       scenePlanElement.textContent = "{}";
