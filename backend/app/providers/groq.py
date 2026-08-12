@@ -66,9 +66,28 @@ class GroqSceneDirector:
         self.transport = transport
 
     async def create_scene_plan(self, request: ScenePlanRequest) -> ScenePlan:
-        unknown_ids = set(request.character_ids) - set(DEVELOPMENT_CHARACTERS)
-        if unknown_ids:
-            raise ProviderInputError("groq", "Unknown character_id")
+        if request.characters:
+            profiles = {character.id: character for character in request.characters}
+            if set(profiles) != set(request.character_ids):
+                raise ProviderInputError(
+                    "groq", "characters must match requested character_ids"
+                )
+        else:
+            unknown_ids = set(request.character_ids) - set(DEVELOPMENT_CHARACTERS)
+            if unknown_ids:
+                raise ProviderInputError("groq", "Unknown character_id")
+            profiles = {
+                character_id: {
+                    "id": character_id,
+                    "name": DEVELOPMENT_CHARACTERS[character_id].name,
+                    "concept": DEVELOPMENT_CHARACTERS[character_id].concept,
+                    "persona": DEVELOPMENT_CHARACTERS[character_id].persona,
+                    "traits": list(DEVELOPMENT_CHARACTERS[character_id].traits),
+                    "speech_style": "",
+                    "relationship_style": "",
+                }
+                for character_id in request.character_ids
+            }
         if not self.api_key:
             raise ProviderConfigurationError("groq", "GROQ_API_KEY is not configured")
 
@@ -76,11 +95,11 @@ class GroqSceneDirector:
         input_payload = {
             "user_text": request.user_text,
             "characters": [
-                {
-                    "id": character_id,
-                    "name": DEVELOPMENT_CHARACTERS[character_id].name,
-                    "persona": DEVELOPMENT_CHARACTERS[character_id].persona,
-                }
+                (
+                    profiles[character_id].model_dump(mode="json")
+                    if hasattr(profiles[character_id], "model_dump")
+                    else profiles[character_id]
+                )
                 for character_id in request.character_ids
             ],
             "recent_messages": [

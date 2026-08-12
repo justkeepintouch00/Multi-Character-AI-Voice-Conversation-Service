@@ -24,7 +24,7 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=get_cors_origins(),
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "PUT", "OPTIONS"],
         allow_headers=["Content-Type"],
     )
     application.add_exception_handler(ProviderError, provider_error_handler)

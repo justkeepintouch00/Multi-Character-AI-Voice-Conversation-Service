@@ -11,25 +11,15 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     CharacterInstance,
     CharacterTemplate,
-    CharacterVersion,
     Conversation,
     ConversationParticipant,
     Message,
     ScenePlan as ScenePlanModel,
-    User,
 )
-from app.domain.characters import (
-    DEVELOPMENT_CHARACTERS,
-    public_character_id_for_name,
-)
+from app.repositories.characters import DevelopmentContext, SQLAlchemyCharacterRepository
+from app.schemas.conversation import ConversationOpeningMessage
 from app.schemas.message import MessageRead
 from app.schemas.scene_plan import RecentMessage, ScenePlan
-
-
-@dataclass(frozen=True, slots=True)
-class DevelopmentContext:
-    user_id: UUID
-    character_instance_ids: dict[str, UUID]
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +37,11 @@ class ConversationRepository(Protocol):
     def ensure_development_context(self) -> DevelopmentContext: ...
 
     def create_conversation(
-        self, context: DevelopmentContext, mode: str, character_ids: list[str]
+        self,
+        context: DevelopmentContext,
+        mode: str,
+        character_ids: list[str],
+        opening_message: ConversationOpeningMessage | None = None,
     ) -> ConversationSnapshot: ...
 
     def get_conversation(
@@ -96,99 +90,18 @@ class SQLAlchemyConversationRepository:
         self.development_user_display_name = development_user_display_name
 
     def ensure_development_context(self) -> DevelopmentContext:
-        user = self.session.scalar(
-            select(User).where(
-                User.external_auth_id == self.development_user_external_id
-            )
-        )
-        if user is None:
-            user = User(
-                display_name=self.development_user_display_name,
-                external_auth_id=self.development_user_external_id,
-            )
-            self.session.add(user)
-            self.session.flush()
-
-        instance_ids: dict[str, UUID] = {}
-        for public_id, character in DEVELOPMENT_CHARACTERS.items():
-            template = self.session.scalar(
-                select(CharacterTemplate).where(
-                    CharacterTemplate.creator_user_id == user.id,
-                    CharacterTemplate.name == character.name,
-                )
-            )
-            if template is None:
-                template = CharacterTemplate(
-                    creator_user_id=user.id,
-                    name=character.name,
-                    description=character.concept,
-                    visibility="PRIVATE",
-                )
-                self.session.add(template)
-                self.session.flush()
-
-                version = CharacterVersion(
-                    template_id=template.id,
-                    version=1,
-                    concept_prompt=character.concept,
-                    traits_json={"traits": list(character.traits)},
-                    speech_style_json={},
-                    relationship_defaults_json={},
-                    additional_prompt=character.persona,
-                )
-                self.session.add(version)
-                self.session.flush()
-                template.current_version_id = version.id
-            else:
-                version = None
-                if template.current_version_id is not None:
-                    version = self.session.get(
-                        CharacterVersion, template.current_version_id
-                    )
-                if version is None:
-                    version = self.session.scalar(
-                        select(CharacterVersion)
-                        .where(CharacterVersion.template_id == template.id)
-                        .order_by(CharacterVersion.version.desc())
-                    )
-                if version is None:
-                    version = CharacterVersion(
-                        template_id=template.id,
-                        version=1,
-                        concept_prompt=character.concept,
-                        traits_json={"traits": list(character.traits)},
-                        speech_style_json={},
-                        relationship_defaults_json={},
-                        additional_prompt=character.persona,
-                    )
-                    self.session.add(version)
-                    self.session.flush()
-                    template.current_version_id = version.id
-
-            instance = self.session.scalar(
-                select(CharacterInstance).where(
-                    CharacterInstance.user_id == user.id,
-                    CharacterInstance.template_id == template.id,
-                )
-            )
-            if instance is None:
-                instance = CharacterInstance(
-                    user_id=user.id,
-                    template_id=template.id,
-                    version_id=version.id,
-                )
-                self.session.add(instance)
-                self.session.flush()
-            instance_ids[public_id] = instance.id
-
-        self.session.commit()
-        return DevelopmentContext(
-            user_id=user.id,
-            character_instance_ids=instance_ids,
-        )
+        return SQLAlchemyCharacterRepository(
+            self.session,
+            development_user_external_id=self.development_user_external_id,
+            development_user_display_name=self.development_user_display_name,
+        ).ensure_development_context()
 
     def create_conversation(
-        self, context: DevelopmentContext, mode: str, character_ids: list[str]
+        self,
+        context: DevelopmentContext,
+        mode: str,
+        character_ids: list[str],
+        opening_message: ConversationOpeningMessage | None = None,
     ) -> ConversationSnapshot:
         conversation = Conversation(user_id=context.user_id, mode=mode, status="ACTIVE")
         self.session.add(conversation)
@@ -200,6 +113,21 @@ class SQLAlchemyConversationRepository:
                     character_instance_id=context.character_instance_ids[public_id],
                     display_order=display_order,
                     participant_role="ACTIVE",
+                )
+            )
+        if opening_message is not None:
+            self.session.add(
+                Message(
+                    conversation_id=conversation.id,
+                    speaker_type="CHARACTER",
+                    speaker_user_id=None,
+                    speaker_character_instance_id=context.character_instance_ids[
+                        opening_message.speaker_id
+                    ],
+                    content=opening_message.content,
+                    input_mode="SYSTEM",
+                    finalized=True,
+                    interrupted=False,
                 )
             )
         self.session.commit()
@@ -373,6 +301,11 @@ class SQLAlchemyConversationRepository:
         )
 
     def _character_public_id_map(self, conversation_id: UUID) -> dict[UUID, str]:
+        context = self.ensure_development_context()
+        known_public_ids = {
+            instance_id: public_id
+            for public_id, instance_id in context.character_instance_ids.items()
+        }
         rows = self.session.execute(
             select(CharacterInstance.id, CharacterTemplate.name)
             .join(
@@ -386,10 +319,8 @@ class SQLAlchemyConversationRepository:
             .where(ConversationParticipant.conversation_id == conversation_id)
         )
         result: dict[UUID, str] = {}
-        for instance_id, name in rows:
-            public_id = public_character_id_for_name(name)
-            if public_id is not None:
-                result[instance_id] = public_id
+        for instance_id, _name in rows:
+            result[instance_id] = known_public_ids.get(instance_id, str(instance_id))
         return result
 
     @staticmethod

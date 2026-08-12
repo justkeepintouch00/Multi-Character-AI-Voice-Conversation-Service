@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from app.domain.characters import DEVELOPMENT_CHARACTERS
 from app.providers.base import SceneDirectorProvider
 from app.repositories.conversations import (
     ConversationRepository,
@@ -32,12 +31,15 @@ class ConversationService:
         self.scene_director = scene_director
 
     def create_conversation(self, request: ConversationCreate) -> ConversationRead:
-        unknown_ids = set(request.character_ids) - set(DEVELOPMENT_CHARACTERS)
+        context = self.repository.ensure_development_context()
+        unknown_ids = set(request.character_ids) - set(context.character_instance_ids)
         if unknown_ids:
             raise InvalidResourceInputError("지원하지 않는 character_id입니다.")
-        context = self.repository.ensure_development_context()
         snapshot = self.repository.create_conversation(
-            context, request.mode, request.character_ids
+            context,
+            request.mode,
+            request.character_ids,
+            request.opening_message,
         )
         return self._conversation_read(snapshot)
 
@@ -87,6 +89,10 @@ class ConversationService:
             ScenePlanRequest(
                 user_text=request.content,
                 character_ids=conversation.character_ids,
+                characters=[
+                    context.character_profiles[character_id]
+                    for character_id in conversation.character_ids
+                ],
                 recent_messages=recent_messages,
             )
         )
