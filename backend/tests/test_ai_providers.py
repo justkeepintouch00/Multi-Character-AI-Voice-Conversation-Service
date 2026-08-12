@@ -199,6 +199,7 @@ def test_groq_transcription_sends_multipart_audio() -> None:
     assert result.segments[0].no_speech_prob == 0.02
     assert result.model == "whisper-large-v3-turbo"
     assert result.fallback_used is False
+    assert result.language_mismatch is False
 
 
 def test_groq_transcription_retries_large_v3_for_low_confidence_turbo() -> None:
@@ -270,6 +271,75 @@ def test_groq_transcription_retries_large_v3_for_low_confidence_turbo() -> None:
     assert result.fallback_used is True
     assert result.primary_text == "왜곡된 1차 문장"
     assert result.primary_avg_logprob == -0.292
+    assert result.fallback_reason == "low_avg_logprob"
+
+
+def test_groq_transcription_retries_when_korean_result_is_english() -> None:
+    request_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        if request_count == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "text": "I think I have a problem with GPT and my project.",
+                    "duration": 17.8,
+                    "segments": [
+                        {
+                            "id": 0,
+                            "start": 0.0,
+                            "end": 17.8,
+                            "text": "I think I have a problem with GPT and my project.",
+                            "avg_logprob": -0.13,
+                            "compression_ratio": 1.2,
+                            "no_speech_prob": 0.0,
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "text": "GPT로 프로젝트를 하는 것이 고민이야.",
+                "duration": 17.8,
+                "segments": [
+                    {
+                        "id": 0,
+                        "start": 0.0,
+                        "end": 17.8,
+                        "text": "GPT로 프로젝트를 하는 것이 고민이야.",
+                        "avg_logprob": -0.11,
+                        "compression_ratio": 1.1,
+                        "no_speech_prob": 0.0,
+                    }
+                ],
+            },
+        )
+
+    provider = GroqTranscriptionProvider(
+        api_key="test-key",
+        base_url="https://api.groq.test/openai/v1",
+        model="whisper-large-v3-turbo",
+        fallback_model="whisper-large-v3",
+        fallback_avg_logprob_threshold=-0.25,
+        transport=httpx.MockTransport(handler),
+    )
+    result = asyncio.run(
+        provider.transcribe(
+            filename="recording.webm",
+            content=b"fake-audio",
+            content_type="audio/webm",
+            language="ko",
+        )
+    )
+
+    assert request_count == 2
+    assert result.text == "GPT로 프로젝트를 하는 것이 고민이야."
+    assert result.fallback_used is True
+    assert result.fallback_reason == "language_mismatch"
+    assert result.language_mismatch is False
 
 
 def test_scene_director_defaults_to_one_speaker_without_distinct_view() -> None:
@@ -284,6 +354,10 @@ def test_scene_director_defaults_to_one_speaker_without_distinct_view() -> None:
     assert "3~5문장으로 충분히 반영" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "같은 내용을 다시 요구하는 질문을 하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "정서적으로 정상화" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "상투적 마무리를 사용하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "질문을 반드시 만들지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "질문 하나만 한다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "persona와 traits" in SCENE_DIRECTOR_INSTRUCTIONS
 
 
 def test_typecast_tts_stream_maps_domain_emotion() -> None:

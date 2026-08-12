@@ -136,6 +136,15 @@
     const MIN_DETECTED_SPEECH_MS = 100;
     const MIN_ACCEPTABLE_AVG_LOGPROB = -0.8;
 
+    function fallbackReasonLabel(reason) {
+      const labels = {
+        low_avg_logprob: "Turbo 신뢰도 낮음",
+        language_mismatch: "한국어 요청과 결과 언어 불일치",
+        language_mismatch_and_low_confidence: "언어 불일치 및 낮은 신뢰도"
+      };
+      return labels[reason] ?? reason ?? "미제공";
+    }
+
     function selectedCharacters() {
       const result = [];
       if (document.querySelector("#characterA").checked) result.push("character_a");
@@ -478,6 +487,9 @@
           `최종 모델 ${transcription.model ?? "미제공"}`,
           `Large V3 재시도 ${transcription.fallback_used ? "사용" : "미사용"}`,
           transcription.fallback_used
+            ? `재시도 사유 ${fallbackReasonLabel(transcription.fallback_reason)}`
+            : null,
+          transcription.fallback_used
             ? `Turbo 1차 avg_logprob ${transcription.primary_avg_logprob?.toFixed(3) ?? "미제공"}`
             : null,
           `길이 ${transcription.duration_seconds ?? "미제공"}초`,
@@ -496,6 +508,15 @@
             ].join("\n")
           : "";
         sttSegmentsElement.textContent = JSON.stringify(segments, null, 2);
+
+        if (transcription.language_mismatch) {
+          statusElement.textContent = [
+            "Large V3 재시도 후에도 한국어 발화가 한국어 문장으로 인식되지 않았습니다.",
+            "잘못된 문장을 LLM에 전달하지 않았습니다. 녹음 파일을 확인하거나 다시 녹음하세요."
+          ].join(" ");
+          statusElement.className = "status error";
+          return;
+        }
 
         if (
           typeof averageLogprob === "number"

@@ -85,7 +85,9 @@ async def create_transcription(
         segments=segments,
         model=result.model,
         fallback_used=result.fallback_used,
+        fallback_reason=result.fallback_reason,
         primary_model=result.primary_model,
         primary_text=result.primary_text,
         primary_avg_logprob=result.primary_avg_logprob,
+        language_mismatch=result.language_mismatch,
     )

@@ -22,6 +22,8 @@ class TranscriptionResponse(BaseModel):
     segments: list[TranscriptionSegmentResponse] | None = None
     model: str | None = None
     fallback_used: bool = False
+    fallback_reason: str | None = None
     primary_model: str | None = None
     primary_text: str | None = None
     primary_avg_logprob: float | None = None
+    language_mismatch: bool = False

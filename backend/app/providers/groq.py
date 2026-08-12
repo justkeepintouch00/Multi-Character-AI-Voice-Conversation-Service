@@ -31,9 +31,9 @@ STRICT_STRUCTURED_OUTPUT_MODELS = {
 }
 
 KOREAN_TRANSCRIPTION_PROMPT = (
-    "Korean first-person conversational speech about AI-assisted software projects "
-    "and personal concerns. Possible terms: GPT, 프로젝트, 면접, 회사, 공감, 조언. "
-    "Transcribe the spoken wording verbatim; do not summarize or rewrite it."
+    "GPT, 프로젝트, 면접, 회사, 인공지능에 관한 개인적인 고민을 말하는 "
+    "한국어 1인칭 일상 대화입니다. 발화를 한국어 그대로 받아쓰고, "
+    "영어로 번역하거나 내용을 요약·각색하지 마세요."
 )
 
 
@@ -212,11 +212,15 @@ class GroqTranscriptionProvider:
             model=self.model,
         )
         primary_avg_logprob = _average_segment_logprob(primary_result.segments)
+        low_confidence = (
+            primary_avg_logprob is not None
+            and primary_avg_logprob < self.fallback_avg_logprob_threshold
+        )
+        language_mismatch = primary_result.language_mismatch
         should_retry = (
             self.fallback_model is not None
             and self.fallback_model != self.model
-            and primary_avg_logprob is not None
-            and primary_avg_logprob < self.fallback_avg_logprob_threshold
+            and (low_confidence or language_mismatch)
         )
         if not should_retry:
             return primary_result
@@ -235,9 +239,17 @@ class GroqTranscriptionProvider:
             segments=fallback_result.segments,
             model=fallback_result.model,
             fallback_used=True,
+            fallback_reason=(
+                "language_mismatch_and_low_confidence"
+                if language_mismatch and low_confidence
+                else "language_mismatch"
+                if language_mismatch
+                else "low_avg_logprob"
+            ),
             primary_model=self.model,
             primary_text=primary_result.text,
             primary_avg_logprob=primary_avg_logprob,
+            language_mismatch=fallback_result.language_mismatch,
         )
 
     async def _transcribe_once(
@@ -327,6 +339,7 @@ class GroqTranscriptionProvider:
             duration_seconds=duration_seconds,
             segments=tuple(segments),
             model=model,
+            language_mismatch=_has_language_mismatch(text, language),
         )
 
 
@@ -347,3 +360,18 @@ def _average_segment_logprob(
     if not values:
         return None
     return sum(values) / len(values)
+
+
+def _has_language_mismatch(text: str, language: str) -> bool:
+    if language.lower() != "ko" or len(text.strip()) < 10:
+        return False
+    alphabetic_characters = [character for character in text if character.isalpha()]
+    if not alphabetic_characters:
+        return True
+    hangul_characters = [
+        character
+        for character in alphabetic_characters
+        if "\uac00" <= character <= "\ud7a3"
+        or "\u3131" <= character <= "\u318e"
+    ]
+    return len(hangul_characters) / len(alphabetic_characters) < 0.2
