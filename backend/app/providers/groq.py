@@ -30,6 +30,11 @@ STRICT_STRUCTURED_OUTPUT_MODELS = {
     "openai/gpt-oss-120b",
 }
 
+KOREAN_TRANSCRIPTION_PROMPT = (
+    "한국어 일상 감정 대화입니다. 관계, 고민, 평가받는 느낌, 공감받고 싶다, "
+    "조언은 필요 없다는 표현이 나올 수 있습니다. 자연스러운 한국어 문장부호를 사용합니다."
+)
+
 
 def _extract_chat_content(payload: dict[str, Any]) -> str:
     try:
@@ -206,6 +211,11 @@ class GroqTranscriptionProvider:
                     data={
                         "model": self.model,
                         "language": language,
+                        "prompt": (
+                            KOREAN_TRANSCRIPTION_PROMPT
+                            if language.lower() == "ko"
+                            else "Natural conversational speech."
+                        ),
                         "response_format": "verbose_json",
                         "temperature": "0",
                     },

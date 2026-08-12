@@ -5,7 +5,11 @@ import json
 
 import httpx
 
-from app.providers.groq import GroqSceneDirector, GroqTranscriptionProvider
+from app.providers.groq import (
+    KOREAN_TRANSCRIPTION_PROMPT,
+    GroqSceneDirector,
+    GroqTranscriptionProvider,
+)
 from app.providers.scene_director import SCENE_DIRECTOR_INSTRUCTIONS
 from app.providers.typecast import TypecastTTSProvider
 from app.schemas.scene_plan import ScenePlanRequest
@@ -152,6 +156,8 @@ def test_groq_transcription_sends_multipart_audio() -> None:
         assert request.url.path == "/openai/v1/audio/transcriptions"
         assert request.headers["content-type"].startswith("multipart/form-data")
         assert b'verbose_json' in request.content
+        assert b'name="prompt"' in request.content
+        assert KOREAN_TRANSCRIPTION_PROMPT.encode() in request.content
         return httpx.Response(
             200,
             json={
@@ -194,10 +200,14 @@ def test_groq_transcription_sends_multipart_audio() -> None:
 
 
 def test_scene_director_defaults_to_one_speaker_without_distinct_view() -> None:
-    assert "기본적으로 가장 적합한 캐릭터 한 명만 답한다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "가장 적합한 캐릭터 한 명만 답한다" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "단순 동의" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "질문의 핵심에 먼저 답한다" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "모든 발화를 고민 상담으로 취급" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "대화 복구 상황" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "변명 없이 사과" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "추가 설명 요구" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "조언, 해결책, 원인 분석을 하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
 
 
 def test_typecast_tts_stream_maps_domain_emotion() -> None:

@@ -128,6 +128,7 @@
     const MAX_SPEECH_RMS_THRESHOLD = 0.008;
     const VAD_CALIBRATION_MS = 400;
     const MIN_DETECTED_SPEECH_MS = 100;
+    const MIN_ACCEPTABLE_AVG_LOGPROB = -0.8;
 
     function selectedCharacters() {
       const result = [];
@@ -474,6 +475,19 @@
           `평균 avg_logprob ${averageLogprob?.toFixed(3) ?? "미제공"}`
         ].join(" · ");
         sttSegmentsElement.textContent = JSON.stringify(segments, null, 2);
+
+        if (
+          typeof averageLogprob === "number"
+          && averageLogprob < MIN_ACCEPTABLE_AVG_LOGPROB
+        ) {
+          statusElement.textContent = [
+            `STT 신뢰도가 낮습니다 (평균 avg_logprob ${averageLogprob.toFixed(3)}).`,
+            "잘못 인식된 문장을 LLM에 전달하지 않았습니다.",
+            "위 문장을 확인한 뒤 다시 녹음하거나 MP3/M4A 파일과 비교하세요."
+          ].join(" ");
+          statusElement.className = "status error";
+          return;
+        }
 
         statusElement.textContent = "Scene Director가 말할 캐릭터를 결정하고 있습니다...";
         const sceneResponse = await fetch(`${API_BASE}/api/v1/scene-plans`, {
