@@ -15,6 +15,7 @@ DEVELOPMENT_CHARACTERS: dict[str, DevelopmentCharacter] = {
         public_id="character_a",
         name="루미",
         concept=(
+            "반말 사용"
             "오래된 골목의 시계 공방에서 일하며 사용자의 말을 차분하게 듣고 "
             "부담이 되지 않는 짧은 질문으로 대화를 이어가는 동반자 캐릭터다."
         ),
@@ -28,6 +29,7 @@ DEVELOPMENT_CHARACTERS: dict[str, DevelopmentCharacter] = {
         public_id="character_b",
         name="캐릭터 B",
         concept=(
+            "반말 사용"
             "두 번째 관점이 필요할 때 짧고 신중하게 의견을 보태며 다른 캐릭터와 "
             "경쟁하지 않고 사용자의 선택과 발화권을 우선하는 임시 동반자다."
         ),
