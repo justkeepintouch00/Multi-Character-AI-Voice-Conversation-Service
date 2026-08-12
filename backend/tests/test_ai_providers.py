@@ -282,13 +282,17 @@ def test_scene_director_defaults_to_one_speaker_without_distinct_view() -> None:
     assert "변명 없이 사과" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "추가 설명 요구" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "조언, 해결책, 원인 분석을 하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
-    assert "3~5문장으로 충분히 반영" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "2~4개의 짧은 문장" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "같은 내용을 다시 요구하는 질문을 하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "정서적으로 정상화" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "상투적 마무리를 사용하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "질문을 반드시 만들지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "질문 하나만 한다" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "persona와 traits" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "첫 번째 캐릭터는 사용자의 감정을 구체적으로 반영" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "다른 관점 1문장만" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "청취 시간이 사용자의 발화를 압도하지 않도록" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "기억했으면 좋겠어요" in SCENE_DIRECTOR_INSTRUCTIONS
 
 
 def test_typecast_tts_stream_maps_domain_emotion() -> None:
