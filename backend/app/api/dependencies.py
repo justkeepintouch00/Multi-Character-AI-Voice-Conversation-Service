@@ -25,6 +25,7 @@ from app.providers.groq import GroqSceneDirector, GroqTranscriptionProvider
 from app.providers.typecast import TypecastTTSProvider
 from app.repositories.characters import SQLAlchemyCharacterRepository
 from app.repositories.conversations import SQLAlchemyConversationRepository
+from app.repositories.memory import SQLAlchemyMemoryRepository
 from app.services.characters import CharacterService
 from app.services.conversations import ConversationService
 
@@ -75,7 +76,8 @@ def get_conversation_service(
         development_user_external_id=get_development_user_external_id(),
         development_user_display_name=get_development_user_display_name(),
     )
-    return ConversationService(repository, scene_director)
+    memory_repository = SQLAlchemyMemoryRepository(session)
+    return ConversationService(repository, scene_director, memory_repository)
 
 
 def get_character_service(

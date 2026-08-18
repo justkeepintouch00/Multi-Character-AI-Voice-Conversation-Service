@@ -3,17 +3,24 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.providers.base import SceneDirectorProvider
+from app.repositories.characters import DevelopmentContext
 from app.repositories.conversations import (
     ConversationRepository,
     ConversationSnapshot,
 )
+from app.repositories.memory import MemoryRepository
 from app.schemas.conversation import ConversationCreate, ConversationRead
 from app.schemas.message import (
     MessageCreate,
     MessageExchangeResponse,
     MessageListResponse,
 )
-from app.schemas.scene_plan import ScenePlanRequest
+from app.schemas.scene_plan import RecentMessage, SceneCharacter, ScenePlan, SceneTurn
+from app.schemas.speaker_turn import (
+    MemoryContextItem,
+    SpeakerTurnRequest,
+    SpeakerTurnResult,
+)
 from app.services.errors import (
     InvalidResourceInputError,
     ResourceConflictError,
@@ -26,9 +33,11 @@ class ConversationService:
         self,
         repository: ConversationRepository,
         scene_director: SceneDirectorProvider,
+        memory_repository: MemoryRepository,
     ) -> None:
         self.repository = repository
         self.scene_director = scene_director
+        self.memory_repository = memory_repository
 
     def create_conversation(self, request: ConversationCreate) -> ConversationRead:
         context = self.repository.ensure_development_context()
@@ -85,26 +94,29 @@ class ConversationService:
         recent_messages = self.repository.recent_messages(conversation_id)
         if recent_messages and recent_messages[-1].role == "USER":
             recent_messages = recent_messages[:-1]
-        scene_plan = await self.scene_director.create_scene_plan(
-            ScenePlanRequest(
-                user_text=request.content,
-                character_ids=conversation.character_ids,
-                characters=[
-                    context.character_profiles[character_id]
-                    for character_id in conversation.character_ids
-                ],
-                recent_messages=recent_messages,
-            )
+
+        turns = await self._generate_turns(
+            context=context,
+            conversation_id=conversation_id,
+            character_ids=conversation.character_ids,
+            user_text=request.content,
+            recent_messages=recent_messages,
+        )
+        plan = ScenePlan(
+            scene_action="CHARACTER_SEQUENCE",
+            turns=turns,
+            return_turn_to="USER",
+            max_internal_turns=len(turns),
         )
         assistant_messages = self.repository.save_scene_result(
             context=context,
             conversation_id=conversation_id,
             triggering_message_id=user_message.id,
-            plan=scene_plan,
+            plan=plan,
         )
         return MessageExchangeResponse(
             user_message=user_message,
-            scene_plan=scene_plan,
+            scene_plan=plan,
             assistant_messages=assistant_messages,
         )
 
@@ -119,6 +131,157 @@ class ConversationService:
             raise ResourceNotFoundError("대화를 찾을 수 없습니다.")
         return MessageListResponse(
             items=self.repository.list_messages(conversation_id, limit)
+        )
+
+    async def _generate_turns(
+        self,
+        *,
+        context: DevelopmentContext,
+        conversation_id: UUID,
+        character_ids: list[str],
+        user_text: str,
+        recent_messages: list[RecentMessage],
+    ) -> list[SceneTurn]:
+        """Generate 1-2 turns with each speaker getting an independent LLM call.
+
+        The turn-arbiter step (``_order_speakers``) only ever looks at public
+        conversation content, never at memory. Each speaker's own call below
+        is the only place memory is fetched, and it is fetched for that
+        speaker alone via ``MemoryRepository.retrieve`` — the other
+        character's private memory is never read into this request.
+        """
+        if not character_ids:
+            return []
+
+        first_id, second_id = self._order_speakers(
+            character_ids, context.character_profiles, user_text, recent_messages
+        )
+        first_profile = context.character_profiles[first_id]
+        second_profile = (
+            context.character_profiles[second_id] if second_id else None
+        )
+
+        primary_result = await self._request_turn(
+            role="PRIMARY",
+            context=context,
+            conversation_id=conversation_id,
+            user_text=user_text,
+            speaker_id=first_id,
+            speaker_profile=first_profile,
+            other_participants=[second_profile] if second_profile else [],
+            recent_messages=recent_messages,
+        )
+        turns = [self._to_scene_turn(primary_result)]
+
+        if second_id is not None and primary_result.needs_second_speaker:
+            secondary_recent = [
+                *recent_messages,
+                RecentMessage(
+                    role="CHARACTER",
+                    speaker_id=first_id,
+                    content=primary_result.text,
+                ),
+            ]
+            secondary_result = await self._request_turn(
+                role="SECONDARY",
+                context=context,
+                conversation_id=conversation_id,
+                user_text=user_text,
+                speaker_id=second_id,
+                speaker_profile=context.character_profiles[second_id],
+                other_participants=[first_profile],
+                recent_messages=secondary_recent,
+            )
+            turns.append(self._to_scene_turn(secondary_result))
+
+        return turns
+
+    async def _request_turn(
+        self,
+        *,
+        role: str,
+        context: DevelopmentContext,
+        conversation_id: UUID,
+        user_text: str,
+        speaker_id: str,
+        speaker_profile: SceneCharacter,
+        other_participants: list[SceneCharacter],
+        recent_messages: list[RecentMessage],
+    ) -> SpeakerTurnResult:
+        memory_records = self.memory_repository.retrieve(
+            user_id=context.user_id,
+            viewer_character_instance_id=context.character_instance_ids[speaker_id],
+            conversation_id=conversation_id,
+        )
+        result = await self.scene_director.create_speaker_turn(
+            SpeakerTurnRequest(
+                role=role,
+                user_text=user_text,
+                speaker=speaker_profile,
+                other_participants=other_participants,
+                recent_messages=recent_messages,
+                memory_context=[
+                    MemoryContextItem(
+                        content=record.content,
+                        memory_type=record.memory_type,
+                        sensitivity=record.sensitivity,
+                    )
+                    for record in memory_records
+                ],
+            )
+        )
+        return result
+
+    @staticmethod
+    def _order_speakers(
+        character_ids: list[str],
+        character_profiles: dict[str, SceneCharacter],
+        user_text: str,
+        recent_messages: list[RecentMessage],
+    ) -> tuple[str, str | None]:
+        if len(character_ids) == 1:
+            return character_ids[0], None
+
+        named_ids = [
+            character_id
+            for character_id in character_ids
+            if character_profiles[character_id].name
+            and character_profiles[character_id].name in user_text
+        ]
+        if len(named_ids) == 1:
+            first_id = named_ids[0]
+        else:
+            last_speaker_id = next(
+                (
+                    message.speaker_id
+                    for message in reversed(recent_messages)
+                    if message.role == "CHARACTER"
+                    and message.speaker_id in character_ids
+                ),
+                None,
+            )
+            if last_speaker_id is not None:
+                others = [
+                    character_id
+                    for character_id in character_ids
+                    if character_id != last_speaker_id
+                ]
+                first_id = others[0] if others else character_ids[0]
+            else:
+                first_id = character_ids[0]
+
+        second_id = next(
+            character_id for character_id in character_ids if character_id != first_id
+        )
+        return first_id, second_id
+
+    @staticmethod
+    def _to_scene_turn(result: SpeakerTurnResult) -> SceneTurn:
+        return SceneTurn(
+            speaker_id=result.speaker_id,
+            to=result.to,
+            emotion=result.emotion,
+            text=result.text,
         )
 
     @staticmethod
