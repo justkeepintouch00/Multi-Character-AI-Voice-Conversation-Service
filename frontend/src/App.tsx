@@ -912,7 +912,7 @@ function PushToTalkMic({ state, transcript, disabled, onToggle }: { state: MicSt
   const copy = state === 'unsupported'
     ? ['음성 인식 미지원', '이 브라우저에서는 키보드 대체 입력을 사용해 주세요.']
     : state === 'denied'
-      ? ['마이크 권한 필요', '브라우저 주소창에서 마이크 권한을 허용한 뒤 다시 눌러 주세요.']
+      ? ['마이크를 사용할 수 없어요', '주소창 왼쪽 자물쇠 아이콘에서 마이크 권한을 허용하거나 연결된 마이크가 있는지 확인한 뒤, 페이지를 새로고침하고 다시 눌러 주세요.']
       : state === 'recording'
         ? ['듣고 있어요', '말을 다 마쳤으면 버튼을 다시 눌러 주세요.']
         : ['눌러서 말하기', '버튼을 누른 뒤 말하고, 다 말했으면 다시 눌러 주세요.']
@@ -1023,9 +1023,23 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
     if (finalText) void sendContent(finalText)
   }
 
-  const startRecording = () => {
+  const startRecording = async () => {
     const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
     if (!Recognition) { setMicState('unsupported'); return }
+
+    // SpeechRecognition은 브라우저에 따라 마이크 동의를 명확하게 요청하지 않고
+    // 내부적으로 처리하는 경우가 있다. getUserMedia로 먼저 명시적으로 동의를
+    // 구해서 권한 프롬프트가 실제로 뜨게 하고, 거부/장치 없음을 구분해 알려준다.
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach((track) => track.stop())
+    } catch (cause) {
+      // eslint-disable-next-line no-console
+      console.warn('[push-to-talk] getUserMedia failed:', cause)
+      setMicState('denied')
+      return
+    }
+
     stopRequestedRef.current = false
     transcriptRef.current = ''
     committedTranscriptRef.current = ''
@@ -1086,7 +1100,7 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
   const toggleRecording = () => {
     if (status === 'thinking' || !conversationId) return
     if (micState === 'recording') stopRecording()
-    else startRecording()
+    else void startRecording()
   }
 
   useEffect(() => () => { recognitionRef.current?.stop() }, [])
