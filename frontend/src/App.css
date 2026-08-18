@@ -541,3 +541,20 @@ button { font-family: inherit; }
 .scenario-intro-page .intro-layout { margin-top: 0; }
 @media (min-width: 1440px) { .scenario-intro-page .intro-content { width: 1080px; } }
 @media (max-width: 820px) { .scenario-intro-page .intro-content { width: calc(100% - 28px); padding-top: 28px; } .intro-inline-back { margin-left: auto; } .scenario-intro-page .intro-cover-image { aspect-ratio: 16 / 9; } }
+
+/* 2026-08-18 push-to-talk mic control for C mode */
+.push-to-talk-panel { display: grid; justify-items: center; gap: 10px; padding: 16px 14px 14px; border: 1px solid #cfe8db; border-radius: 12px; background: #f8fcfa; text-align: center; }
+.push-to-talk-panel.mic-recording { border-color: #f0c0c0; background: #fff7f7; }
+.push-to-talk-panel.mic-denied, .push-to-talk-panel.mic-unsupported { border-color: #f0dab3; background: #fffaf1; }
+.mic-button { display: grid; place-items: center; width: 60px; height: 60px; border: 0; border-radius: 50%; background: linear-gradient(135deg, #7968ec, #5f4bd8); box-shadow: 0 10px 22px rgba(96, 75, 216, .28); transition: transform .15s ease, box-shadow .15s ease; }
+.mic-button:hover:not(:disabled) { box-shadow: 0 12px 26px rgba(96, 75, 216, .36); }
+.mic-button:active:not(:disabled) { transform: scale(.94); }
+.mic-button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+.mic-button .mic-icon { display: block; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: border-radius .15s ease; }
+.mic-button.recording { background: linear-gradient(135deg, #ef7a7a, #e14b4b); animation: mic-pulse 1.4s ease-in-out infinite; }
+.mic-button.recording .mic-icon { border-radius: 5px; }
+.push-to-talk-copy strong { display: block; font-size: 10px; }
+.push-to-talk-copy small { display: block; margin-top: 3px; color: var(--muted); font-size: 7px; line-height: 1.5; }
+.push-to-talk-panel .live-transcript { width: 100%; }
+@keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(228, 76, 76, .35); } 50% { box-shadow: 0 0 0 11px rgba(228, 76, 76, 0); } }
+@media (prefers-reduced-motion: reduce) { .mic-button.recording { animation: none; } }

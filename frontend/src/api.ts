@@ -31,9 +31,17 @@ export type MessageApi = {
   input_mode: 'TEXT' | 'VOICE' | 'SYSTEM'
 }
 
+export type SceneTurnApi = {
+  speaker_id: string
+  to: string
+  emotion: string
+  text: string
+}
+
 export type MessageExchangeApi = {
   user_message: MessageApi
   assistant_messages: MessageApi[]
+  scene_plan: { turns: SceneTurnApi[] }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -68,15 +76,16 @@ export function updateCharacter(id: string, value: CharacterWriteApi): Promise<C
 }
 
 export function createConversation(
-  characterId: string,
+  characterIds: string[],
+  openingSpeakerId: string,
   openingMessage: string,
 ): Promise<ConversationApi> {
   return request('/api/v1/conversations', {
     method: 'POST',
     body: JSON.stringify({
       mode: 'TALK',
-      character_ids: [characterId],
-      opening_message: { speaker_id: characterId, content: openingMessage },
+      character_ids: characterIds,
+      opening_message: { speaker_id: openingSpeakerId, content: openingMessage },
     }),
   })
 }
@@ -89,4 +98,25 @@ export function sendTextMessage(
     method: 'POST',
     body: JSON.stringify({ content, input_mode: 'TEXT' }),
   })
+}
+
+export async function fetchSpeechAudio(
+  speakerId: string,
+  text: string,
+  emotion: string,
+): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/tts/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      speaker_id: speakerId,
+      text,
+      emotion,
+      audio_format: 'mp3',
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`TTS API ${response.status}`)
+  }
+  return response.blob()
 }

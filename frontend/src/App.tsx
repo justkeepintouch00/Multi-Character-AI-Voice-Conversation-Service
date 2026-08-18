@@ -2,11 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createCharacter,
   createConversation,
+  fetchSpeechAudio,
   listCharacters,
   sendTextMessage,
   updateCharacter,
   type CharacterApi,
   type MessageApi,
+  type SceneTurnApi,
 } from './api'
 import './App.css'
 
@@ -36,6 +38,8 @@ type Scenario = {
   title: string
   summary: string
   characterNames: string[]
+  /** Real backend character ids for API-connected C-mode runs (character_a / character_b). */
+  characterIds?: string[]
   duration: string
   published: boolean
   plays: number
@@ -148,7 +152,9 @@ const initialCharacters: Character[] = [
 const initialScenarios: Scenario[] = [
   { id: 'snack', mode: 'A', title: '오늘의 간식 선발전', summary: '제한 시간 안에 간식을 고르고 자기 이유를 분명하게 말해보는 짧은 연습', characterNames: ['하루'], duration: '약 5분', published: true, plays: 128, coverImage: '/assets/20260812_1414_snack_selection_scene_clean.png' },
   { id: 'lunch', mode: 'B', title: '오늘 점심은 반드시 정한다', summary: '지윤이 전해준 서로 다른 의견과 제한 조건을 확인해 실행할 수 있는 결정을 만드는 상황', characterNames: ['지윤'], duration: '약 8분', published: true, plays: 84 },
-  { id: 'first-talk', mode: 'C', title: '공방이 문을 닫은 뒤', summary: '말할 준비가 될 때까지 루미의 일상을 따라가며 천천히 대화를 시작하는 이야기', characterNames: ['루미'], duration: '자유 대화', published: true, plays: 203 },
+  { id: 'first-talk', mode: 'C', title: '공방이 문을 닫은 뒤', summary: '말할 준비가 될 때까지 루미의 일상을 따라가며 천천히 대화를 시작하는 이야기', characterNames: ['루미'], characterIds: ['character_a'], duration: '자유 대화', published: true, plays: 203 },
+  { id: 'first-talk-b', mode: 'C', title: '문 닫기 전 마지막 손님', summary: '캐릭터 B와 단둘이 나누는 부담 없는 자유 대화', characterNames: ['캐릭터 B'], characterIds: ['character_b'], duration: '자유 대화', published: true, plays: 41 },
+  { id: 'first-talk-duo', mode: 'C', title: '둘이 함께 듣는 이야기', summary: '루미와 캐릭터 B가 함께 있는 자리에서 각자의 기억으로 반응하는 대화', characterNames: ['루미', '캐릭터 B'], characterIds: ['character_a', 'character_b'], duration: '자유 대화', published: true, plays: 12 },
 ]
 
 const initialDrafts: Record<Mode, ScenarioDraft> = {
@@ -636,10 +642,10 @@ function ScenarioIntro({ scenario, onBack, onStart }: { scenario: Scenario; onBa
       <section className="intro-layout">
         <div className="intro-main">
           <section><span className="intro-label">관찰 포인트</span><ul>{observationPoints.map((point) => <li key={point}><span>◎</span>{point}</li>)}</ul></section>
-          <section><span className="intro-label">진행 방식</span><div className="process-row"><div><b>1</b><strong>장면 확인</strong><small>화면 해설과 캐릭터 대화</small></div><i>→</i><div><b>2</b><strong>자동 음성 인식</strong><small>버튼 없이 말하면 자동 인식</small></div><i>→</i><div><b>3</b><strong>{scenario.mode === 'C' ? '자유 대화' : '결말과 피드백'}</strong><small>{scenario.mode === 'C' ? '평가 없이 이어가기' : '실제 발화 근거로 설명'}</small></div></div></section>
+          <section><span className="intro-label">진행 방식</span><div className="process-row"><div><b>1</b><strong>장면 확인</strong><small>화면 해설과 캐릭터 대화</small></div><i>→</i><div><b>2</b><strong>{scenario.mode === 'C' ? '버튼으로 말하기' : '자동 음성 인식'}</strong><small>{scenario.mode === 'C' ? '버튼을 누르고 말한 뒤 다시 눌러 종료' : '버튼 없이 말하면 자동 인식'}</small></div><i>→</i><div><b>3</b><strong>{scenario.mode === 'C' ? '자유 대화' : '결말과 피드백'}</strong><small>{scenario.mode === 'C' ? '평가 없이 이어가기' : '실제 발화 근거로 설명'}</small></div></div></section>
           {endingCount > 0 && <section><div className="locked-heading"><div><span className="intro-label">발견할 수 있는 결말</span><p>결말의 이름과 조건은 시작 전에 공개하지 않습니다.</p></div><strong>총 {endingCount}개</strong></div><div className="locked-ending-row">{Array.from({ length: endingCount }).map((_, index) => <div key={index}><span>▣</span><strong>잠긴 결말 {index + 1}</strong><small>플레이 후 발견</small></div>)}</div></section>}
         </div>
-        <aside className="intro-side"><span className="intro-label">등장 캐릭터</span><div className="intro-characters">{scenario.characterNames.map((name, index) => <div key={name}><PersonAvatar name={name} accent={['violet', 'blue', 'mint'][index]} large /><strong>{name}</strong>{scenario.mode === 'C' && index === 0 && <small>대표 화자</small>}</div>)}</div><div className="intro-notice"><strong>시작하기 전에</strong><p>마이크 권한을 허용하면 대화 중 별도 버튼을 누르지 않아도 음성을 자동으로 인식합니다. 언제든 키보드로 대신 입력할 수 있습니다.</p></div><button type="button" className="primary-button intro-start" onClick={onStart}>{scenario.mode === 'C' ? '대화 시작하기' : '시나리오 시작하기'} →</button></aside>
+        <aside className="intro-side"><span className="intro-label">등장 캐릭터</span><div className="intro-characters">{scenario.characterNames.map((name, index) => <div key={name}><PersonAvatar name={name} accent={['violet', 'blue', 'mint'][index]} large /><strong>{name}</strong>{scenario.mode === 'C' && index === 0 && <small>대표 화자</small>}</div>)}</div><div className="intro-notice"><strong>시작하기 전에</strong><p>{scenario.mode === 'C' ? '마이크 버튼을 누르면 말하기가 시작되고, 다 말한 뒤 다시 누르면 전송됩니다. 언제든 키보드로 대신 입력할 수 있습니다.' : '마이크 권한을 허용하면 대화 중 별도 버튼을 누르지 않아도 음성을 자동으로 인식합니다. 언제든 키보드로 대신 입력할 수 있습니다.'}</p></div><button type="button" className="primary-button intro-start" onClick={onStart}>{scenario.mode === 'C' ? '대화 시작하기' : '시나리오 시작하기'} →</button></aside>
       </section>
     </main>
   </div>
@@ -900,23 +906,55 @@ function ScenarioRunner({ scenario, onExit, onFinish }: { scenario: Scenario; on
   </div>
 }
 
-function CModeConversationRunner({ scenario, character, onExit }: { scenario: Scenario; character: Character; onExit: () => void }) {
-  const opening = '마침 나도 문을 닫으려던 참이었어. 처음부터 말하려니 조금 어색할 수 있겠다. 말하기 힘들면 내 이야기만 들어도 괜찮아.'
+type MicState = 'idle' | 'recording' | 'unsupported' | 'denied'
+
+function PushToTalkMic({ state, transcript, disabled, onToggle }: { state: MicState; transcript: string; disabled: boolean; onToggle: () => void }) {
+  const copy = state === 'unsupported'
+    ? ['음성 인식 미지원', '이 브라우저에서는 키보드 대체 입력을 사용해 주세요.']
+    : state === 'denied'
+      ? ['마이크 권한 필요', '브라우저 주소창에서 마이크 권한을 허용한 뒤 다시 눌러 주세요.']
+      : state === 'recording'
+        ? ['듣고 있어요', '말을 다 마쳤으면 버튼을 다시 눌러 주세요.']
+        : ['눌러서 말하기', '버튼을 누른 뒤 말하고, 다 말했으면 다시 눌러 주세요.']
+  return <div className={`push-to-talk-panel mic-${state}`}>
+    <button
+      type="button"
+      className={`mic-button ${state === 'recording' ? 'recording' : ''}`}
+      onClick={onToggle}
+      disabled={disabled || state === 'unsupported'}
+      aria-pressed={state === 'recording'}
+      aria-label={state === 'recording' ? '말하기 종료' : '눌러서 말하기'}
+    >
+      <span className="mic-icon" aria-hidden="true" />
+    </button>
+    <div className="push-to-talk-copy"><strong>{copy[0]}</strong><small>{copy[1]}</small></div>
+    <div className="live-transcript"><span>실시간 자막</span><p>{transcript || '버튼을 누르면 이곳에 인식된 내용이 표시됩니다.'}</p></div>
+  </div>
+}
+
+function CModeConversationRunner({ scenario, characters, onExit }: { scenario: Scenario; characters: Character[]; onExit: () => void }) {
+  const primary = characters[0]
+  const opening = '마침 나도 마무리하려던 참이었어. 처음부터 말하려니 조금 어색할 수 있겠다. 말하기 힘들면 내 이야기만 들어도 괜찮아.'
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<MessageApi[]>([{
-    id: 'opening', speaker_type: 'CHARACTER', speaker_id: character.id, content: opening, input_mode: 'SYSTEM',
+    id: 'opening', speaker_type: 'CHARACTER', speaker_id: primary.id, content: opening, input_mode: 'SYSTEM',
   }])
   const [typed, setTyped] = useState('')
   const [transcript, setTranscript] = useState('')
-  const [voiceState, setVoiceState] = useState<VoiceState>('starting')
+  const [micState, setMicState] = useState<MicState>('idle')
   const [status, setStatus] = useState<'connecting' | 'ready' | 'thinking' | 'error'>('connecting')
   const [error, setError] = useState('')
   const conversationRequest = useRef<ReturnType<typeof createConversation> | null>(null)
-  const voiceSubmitRef = useRef<(value: string) => void>(() => undefined)
+  const recognitionRef = useRef<RecognitionInstance | null>(null)
+  const transcriptRef = useRef('')
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const characterIds = characters.map((item) => item.id)
+  const characterIdsKey = characterIds.join(',')
+  const findCharacter = (id: string) => characters.find((item) => item.id === id) ?? primary
 
   useEffect(() => {
     if (!conversationRequest.current) {
-      conversationRequest.current = createConversation(character.id, opening)
+      conversationRequest.current = createConversation(characterIds, primary.id, opening)
     }
     let active = true
     conversationRequest.current
@@ -931,7 +969,28 @@ function CModeConversationRunner({ scenario, character, onExit }: { scenario: Sc
         setStatus('error')
       })
     return () => { active = false }
-  }, [character.id])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characterIdsKey])
+
+  const playTurns = async (turns: SceneTurnApi[]) => {
+    for (const turn of turns) {
+      try {
+        const blob = await fetchSpeechAudio(turn.speaker_id, turn.text, turn.emotion)
+        const url = URL.createObjectURL(blob)
+        await new Promise<void>((resolve) => {
+          const audio = audioRef.current
+          if (!audio) { resolve(); return }
+          audio.src = url
+          audio.onended = () => resolve()
+          audio.onerror = () => resolve()
+          void audio.play().catch(() => resolve())
+        })
+        URL.revokeObjectURL(url)
+      } catch {
+        // TTS 재생은 보조 기능이므로 실패해도 채팅 흐름은 막지 않는다.
+      }
+    }
+  }
 
   const sendContent = async (rawValue: string) => {
     const content = rawValue.trim()
@@ -943,56 +1002,66 @@ function CModeConversationRunner({ scenario, character, onExit }: { scenario: Sc
       const exchange = await sendTextMessage(conversationId, content)
       setMessages((current) => [...current, exchange.user_message, ...exchange.assistant_messages])
       setStatus('ready')
+      void playTurns(exchange.scene_plan.turns)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '메시지 전송에 실패했습니다.')
       setStatus('error')
     }
   }
-  voiceSubmitRef.current = (value) => { void sendContent(value) }
 
-  useEffect(() => {
-    if (!conversationId || status === 'thinking') return
+  const stopRecording = () => {
+    recognitionRef.current?.stop()
+    recognitionRef.current = null
+    setMicState('idle')
+    const finalText = transcriptRef.current.trim()
+    transcriptRef.current = ''
+    if (finalText) void sendContent(finalText)
+  }
+
+  const startRecording = () => {
     const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
-    if (!Recognition) { setVoiceState('unsupported'); return }
+    if (!Recognition) { setMicState('unsupported'); return }
     const recognition = new Recognition()
-    let active = true
-    let submitted = false
-    let blocked = false
+    transcriptRef.current = ''
+    setTranscript('')
     recognition.lang = 'ko-KR'
     recognition.continuous = true
     recognition.interimResults = true
-    recognition.onstart = () => setVoiceState('listening')
+    recognition.onstart = () => setMicState('recording')
     recognition.onresult = (event) => {
       let combined = ''
-      let finalText = ''
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const text = event.results[index][0].transcript
-        combined += text
-        if (event.results[index].isFinal) finalText += text
+      for (let index = 0; index < event.results.length; index += 1) {
+        combined += event.results[index][0].transcript
       }
-      if (combined.trim()) setTranscript(combined.trim())
-      if (finalText.trim() && !submitted) {
-        submitted = true
-        voiceSubmitRef.current(finalText.trim())
-      }
+      transcriptRef.current = combined.trim()
+      setTranscript(transcriptRef.current)
     }
     recognition.onerror = (event) => {
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') { blocked = true; setVoiceState('denied') }
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') setMicState('denied')
     }
     recognition.onend = () => {
-      if (active && !submitted && !blocked) {
-        try { recognition.start() } catch { setVoiceState('starting') }
-      }
+      setMicState((current) => (current === 'recording' ? 'idle' : current))
     }
-    try { recognition.start() } catch { setVoiceState('starting') }
-    return () => { active = false; recognition.stop() }
-  }, [conversationId, status])
+    recognitionRef.current = recognition
+    try { recognition.start() } catch { setMicState('idle') }
+  }
+
+  const toggleRecording = () => {
+    if (status === 'thinking' || !conversationId) return
+    if (micState === 'recording') stopRecording()
+    else startRecording()
+  }
+
+  useEffect(() => () => { recognitionRef.current?.stop() }, [])
 
   const latestCharacterMessage = [...messages].reverse().find((message) => message.speaker_type === 'CHARACTER')
+  const latestSpeaker = latestCharacterMessage?.speaker_id ? findCharacter(latestCharacterMessage.speaker_id) : primary
+  const narrationNames = characters.map((item) => item.name).join(', ')
   return <div className="runner-page c-api-runner">
     <header className="runner-header"><button type="button" className="back-button" onClick={onExit}>←</button><div><ModeBadge mode="C" /><strong>{scenario.title}</strong><span className="documented-badge">실제 API 연결</span></div><div className="runner-progress"><span>{status === 'connecting' ? '연결 중' : status === 'thinking' ? '답변 생성 중' : '자유 대화'}</span></div><button type="button" className="outline-button" onClick={onExit}>나가기</button></header>
-    <main className="scene-stage stage-c c-latest-turn"><div className="scene-people"><div className="scene-person person-0"><PersonAvatar name={character.name} accent={character.accent} image={character.image} large /><span>{character.name}</span></div></div><div className="scene-conversation-layer"><div className="scene-narration">공방의 마지막 조명을 끄기 전, {character.name}가 사용자를 발견한다.</div><article className="live-caption-card"><PersonAvatar name={character.name} accent={character.accent} image={character.image} /><div><span>{character.name}</span><p>{status === 'thinking' ? '잠시 생각하고 있어…' : latestCharacterMessage?.content ?? opening}</p></div></article></div></main>
-    <aside className="interaction-dock"><div className="turn-guidance"><span>C 모드 · 자동 음성 인식</span><strong>{status === 'thinking' ? `${character.name}가 답변을 생각하고 있어요.` : '평가 없이 자유롭게 이야기합니다.'}</strong></div><AlwaysListening transcript={transcript} state={voiceState} />{error && <div className="captured-answer"><span>연결 오류</span><p>{error}</p></div>}<div className="text-response"><form onSubmit={(event) => { event.preventDefault(); void sendContent(typed) }}><label><span>키보드 대체 입력</span><input value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="마이크를 사용할 수 없을 때 입력하세요" /></label><button type="submit" disabled={!typed.trim() || !conversationId || status === 'thinking'}>전송</button></form></div></aside>
+    <main className="scene-stage stage-c c-latest-turn"><div className="scene-people">{characters.map((item, index) => <div key={item.id} className={`scene-person person-${index}`}><PersonAvatar name={item.name} accent={item.accent} image={item.image} large /><span>{item.name}</span></div>)}</div><div className="scene-conversation-layer"><div className="scene-narration">대화를 시작하기 전, {narrationNames}가 사용자를 반긴다.</div><article className="live-caption-card"><PersonAvatar name={latestSpeaker.name} accent={latestSpeaker.accent} image={latestSpeaker.image} /><div><span>{latestSpeaker.name}</span><p>{status === 'thinking' ? '잠시 생각하고 있어…' : latestCharacterMessage?.content ?? opening}</p></div></article></div></main>
+    <aside className="interaction-dock"><div className="turn-guidance"><span>C 모드 · 버튼으로 말하기</span><strong>{status === 'thinking' ? `${latestSpeaker.name}가 답변을 생각하고 있어요.` : '평가 없이 자유롭게 이야기합니다.'}</strong></div><PushToTalkMic state={micState} transcript={transcript} disabled={status === 'thinking' || !conversationId} onToggle={toggleRecording} />{error && <div className="captured-answer"><span>연결 오류</span><p>{error}</p></div>}<div className="text-response"><form onSubmit={(event) => { event.preventDefault(); void sendContent(typed) }}><label><span>키보드 대체 입력</span><input value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="마이크를 사용할 수 없을 때 입력하세요" /></label><button type="submit" disabled={!typed.trim() || !conversationId || status === 'thinking'}>전송</button></form></div></aside>
+    <audio ref={audioRef} hidden />
   </div>
 }
 
@@ -1083,8 +1152,12 @@ function App() {
   if (page === 'run' && runningScenario) {
     const runnerProps = { scenario: runningScenario, onExit: () => navigate('scenarios'), onFinish: (data: ResultData) => { setResult(data); setPage('result') } }
     if (runningScenario.mode === 'C') {
-      const character = characters.find((item) => runningScenario.characterNames.includes(item.name)) ?? characters[0]
-      return character ? <CModeConversationRunner scenario={runningScenario} character={character} onExit={() => navigate('scenarios')} /> : null
+      const byId = (runningScenario.characterIds ?? [])
+        .map((id) => characters.find((item) => item.id === id))
+        .filter((item): item is Character => Boolean(item))
+      const byName = characters.filter((item) => runningScenario.characterNames.includes(item.name))
+      const resolvedCharacters = byId.length > 0 ? byId : byName.length > 0 ? byName : characters.slice(0, 1)
+      return resolvedCharacters.length > 0 ? <CModeConversationRunner scenario={runningScenario} characters={resolvedCharacters} onExit={() => navigate('scenarios')} /> : null
     }
     return runningScenario.id === 'snack' ? <SnackSelectionScenario {...runnerProps} /> : <ScenarioRunner {...runnerProps} />
   }
