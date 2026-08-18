@@ -1031,7 +1031,7 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
     committedTranscriptRef.current = ''
     setTranscript('')
 
-    const beginSession = () => {
+    const beginSession = (retry = 0) => {
       const recognition = new Recognition()
       recognition.lang = 'ko-KR'
       recognition.continuous = true
@@ -1047,7 +1047,9 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
         setTranscript(combined)
       }
       recognition.onerror = (event) => {
-        // 무음(no-speech) 등은 onend가 뒤따라오므로 거기서 재시작한다.
+        // eslint-disable-next-line no-console
+        console.warn('[push-to-talk] recognition error:', event.error)
+        // 무음(no-speech), 네트워크 끊김 등은 onend가 뒤따라오므로 거기서 재시작한다.
         // 권한 거부만 진짜로 멈춘다.
         if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
           stopRequestedRef.current = true
@@ -1062,7 +1064,21 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
         beginSession()
       }
       recognitionRef.current = recognition
-      try { recognition.start() } catch { setMicState('idle') }
+      try {
+        recognition.start()
+      } catch (cause) {
+        // 이전 세션이 완전히 정리되기 전에 재시작을 시도하면(InvalidStateError)
+        // 바로 포기하지 않고 짧게 재시도한다. 그래야 재시작 경계에서
+        // 사용자의 말이 통째로 사라지지 않는다.
+        // eslint-disable-next-line no-console
+        console.warn('[push-to-talk] recognition.start() failed:', cause)
+        if (stopRequestedRef.current) { setMicState('idle'); return }
+        if (retry < 5) {
+          window.setTimeout(() => beginSession(retry + 1), 200)
+        } else {
+          setMicState('idle')
+        }
+      }
     }
     beginSession()
   }
