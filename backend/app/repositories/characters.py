@@ -15,6 +15,7 @@ from app.schemas.scene_plan import SceneCharacter
 @dataclass(frozen=True, slots=True)
 class DevelopmentContext:
     user_id: UUID
+    user_display_name: str
     character_instance_ids: dict[str, UUID]
     character_profiles: dict[str, SceneCharacter]
 
@@ -127,9 +128,16 @@ class SQLAlchemyCharacterRepository:
         self.session.commit()
         return DevelopmentContext(
             user_id=user.id,
+            user_display_name=user.display_name,
             character_instance_ids=instance_ids,
             character_profiles=profiles,
         )
+
+    def update_display_name(self, display_name: str) -> DevelopmentContext:
+        user = self._ensure_user()
+        user.display_name = display_name
+        self.session.commit()
+        return self.ensure_development_context()
 
     def list_characters(self) -> list[CharacterRead]:
         context = self.ensure_development_context()

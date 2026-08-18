@@ -90,6 +90,7 @@ class GroqSceneDirector:
 
         input_payload = {
             "user_text": request.user_text,
+            "user_display_name": request.user_display_name,
             "speaker": request.speaker.model_dump(mode="json"),
             "other_participants": [
                 character.model_dump(mode="json")

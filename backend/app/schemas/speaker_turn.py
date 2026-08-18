@@ -50,6 +50,7 @@ class SpeakerTurnRequest(BaseModel):
 
     role: Literal["PRIMARY", "SECONDARY"]
     user_text: str = Field(min_length=1, max_length=4000)
+    user_display_name: str | None = Field(default=None, max_length=100)
     speaker: SceneCharacter
     other_participants: list[SceneCharacter] = Field(
         default_factory=list, max_length=1

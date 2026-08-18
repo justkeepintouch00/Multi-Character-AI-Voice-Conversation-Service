@@ -6,6 +6,7 @@ from app.api.routes import (
     conversations,
     health,
     memory,
+    profile,
     scene_plans,
     speech,
     transcriptions,
@@ -17,6 +18,7 @@ api_router.include_router(health.router)
 api_router.include_router(characters.router)
 api_router.include_router(conversations.router)
 api_router.include_router(memory.router)
+api_router.include_router(profile.router)
 api_router.include_router(scene_plans.router)
 api_router.include_router(transcriptions.router)
 api_router.include_router(audio.router)

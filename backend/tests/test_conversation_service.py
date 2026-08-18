@@ -35,6 +35,7 @@ class FakeRepository:
         }
         self.context = DevelopmentContext(
             user_id=self.user_id,
+            user_display_name="테스트 사용자",
             character_instance_ids=self.character_instance_ids,
             character_profiles={
                 "character_a": SceneCharacter(

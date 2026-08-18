@@ -1,11 +1,20 @@
 from app.repositories.characters import SQLAlchemyCharacterRepository
 from app.schemas.character import CharacterListResponse, CharacterRead, CharacterWrite
+from app.schemas.profile import ProfileRead, ProfileUpdate
 from app.services.errors import ResourceNotFoundError
 
 
 class CharacterService:
     def __init__(self, repository: SQLAlchemyCharacterRepository) -> None:
         self.repository = repository
+
+    def get_profile(self) -> ProfileRead:
+        context = self.repository.ensure_development_context()
+        return ProfileRead(display_name=context.user_display_name)
+
+    def update_profile(self, request: ProfileUpdate) -> ProfileRead:
+        context = self.repository.update_display_name(request.display_name)
+        return ProfileRead(display_name=context.user_display_name)
 
     def list_characters(self) -> CharacterListResponse:
         return CharacterListResponse(items=self.repository.list_characters())

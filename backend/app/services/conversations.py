@@ -252,6 +252,7 @@ class ConversationService:
             SpeakerTurnRequest(
                 role=role,
                 user_text=user_text,
+                user_display_name=context.user_display_name or None,
                 speaker=speaker_profile,
                 other_participants=other_participants,
                 recent_messages=recent_messages,
