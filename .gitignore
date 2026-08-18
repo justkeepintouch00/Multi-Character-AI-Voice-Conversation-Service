@@ -6,3 +6,5 @@ __pycache__/
 *.egg-info/
 backend/test_outputs/
 backend/evals/runs/
+/share/
+/frontend/share/

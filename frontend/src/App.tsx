@@ -627,9 +627,9 @@ function ScenarioIntro({ scenario, onBack, onStart }: { scenario: Scenario; onBa
       ? ['전달받은 여러 의견을 빠뜨리지 않고 정리하는지', '원하는 것과 불가능한 조건을 함께 확인하는지', '시간 안에 실행 가능한 최종안을 제안하는지']
       : ['사용자가 편한 방식으로 첫 대화에 진입하는지', '부담이 낮은 주제부터 자기 속도로 참여하는지', '평가 없이 관계와 대화를 이어가는지']
   return <div className="scenario-intro-page">
-    <header className="simple-header"><Logo /><button type="button" className="outline-button intro-back-button" onClick={onBack}>← 시나리오 목록으로</button></header>
+    <header className="simple-header"><Logo /></header>
     <main className="intro-content">
-      <div className="intro-breadcrumb"><ModeBadge mode={scenario.mode} /><span>{scenario.duration}</span></div>
+      <div className="intro-breadcrumb"><ModeBadge mode={scenario.mode} /><span>{scenario.duration}</span><button type="button" className="intro-inline-back" onClick={onBack}>← 시나리오 목록</button></div>
       <h1>{scenario.title}</h1>
       <p className="intro-summary">{scenario.summary}</p>
       {scenario.coverImage && <figure className="intro-cover-image"><img src={scenario.coverImage} alt={`${scenario.title} 대표 배경`} /><figcaption><ModeBadge mode={scenario.mode} /><span>{scenario.characterNames.join(' · ')}와 함께 시작하는 장면</span></figcaption></figure>}
