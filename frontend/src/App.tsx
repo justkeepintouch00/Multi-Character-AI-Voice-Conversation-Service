@@ -19,7 +19,7 @@ type BuilderSection = 'overview' | 'characters' | 'flow' | 'endings' | 'rules' |
 type Character = {
   id: string
   name: string
-  nickname: string
+  occupation: string
   concept: string
   persona: string
   traits: string[]
@@ -40,6 +40,8 @@ type Scenario = {
   characterNames: string[]
   /** Real backend character ids for API-connected C-mode runs (character_a / character_b). */
   characterIds?: string[]
+  /** Opening line for API-connected C-mode runs, spoken by characterIds[0]. */
+  opening?: string
   duration: string
   published: boolean
   plays: number
@@ -127,21 +129,21 @@ declare global {
 
 const initialCharacters: Character[] = [
   {
-    id: 'haru', name: '하루', nickname: '하루',
+    id: 'haru', name: '하루', occupation: '편의점 야간 아르바이트생',
     concept: '동네 편의점에서 야간 아르바이트를 한다. 장난이 많고 매운 음식을 좋아하며, 사용자가 결정을 미루면 가볍게 등을 떠민다.',
     persona: '친한 친구처럼 반말을 사용한다. 일상적인 말에는 장난스럽고 솔직하게 반응하며 과도한 상담 문구를 사용하지 않는다.',
     traits: ['장난스러운', '솔직한', '활발한'], speech: '반말', length: '보통', relation: '장난을 많이 치는 동생',
     voice: '밝고 또렷한 목소리', accent: 'violet', updated: '오늘 수정', image: '/assets/20260811_1726_haru_profile.png',
   },
   {
-    id: 'lumi', name: '루미', nickname: '',
+    id: 'lumi', name: '루미', occupation: '시계 공방 주인',
     concept: '오래된 골목에서 시계 공방을 운영한다. 식사를 자주 거르고 밤늦게 혼자 산책하며, 조용하지만 상대의 말을 오래 기억한다.',
     persona: '차분하고 섬세하지만 모든 말을 고민 상담으로 취급하지 않는다. 사용자의 표현에 구체적이고 자연스럽게 반응한다.',
     traits: ['다정한', '차분한', '섬세한'], speech: '관계에 따라 변화', length: '보통', relation: '차분하게 이끌어주는 선배',
     voice: '낮고 차분한 목소리', accent: 'blue', updated: '어제 수정',
   },
   {
-    id: 'jiyoon', name: '지윤', nickname: '지유',
+    id: 'jiyoon', name: '지윤', occupation: '동아리 총무',
     concept: '동아리의 총무를 맡고 있다. 의견을 강하게 주장하지 않지만 시간과 음식 제한처럼 실제로 지켜야 할 조건을 꼼꼼하게 기억한다.',
     persona: '현실적인 조건을 짧게 확인하며 사용자를 평가하거나 결정을 대신하지 않는다.',
     traits: ['차분한', '솔직한', '섬세한'], speech: '반말', length: '짧게 말함', relation: '조용히 곁을 지키는 동료',
@@ -152,9 +154,9 @@ const initialCharacters: Character[] = [
 const initialScenarios: Scenario[] = [
   { id: 'snack', mode: 'A', title: '오늘의 간식 선발전', summary: '제한 시간 안에 간식을 고르고 자기 이유를 분명하게 말해보는 짧은 연습', characterNames: ['하루'], duration: '약 5분', published: true, plays: 128, coverImage: '/assets/20260812_1414_snack_selection_scene_clean.png' },
   { id: 'lunch', mode: 'B', title: '오늘 점심은 반드시 정한다', summary: '지윤이 전해준 서로 다른 의견과 제한 조건을 확인해 실행할 수 있는 결정을 만드는 상황', characterNames: ['지윤'], duration: '약 8분', published: true, plays: 84 },
-  { id: 'first-talk', mode: 'C', title: '공방이 문을 닫은 뒤', summary: '말할 준비가 될 때까지 루미의 일상을 따라가며 천천히 대화를 시작하는 이야기', characterNames: ['루미'], characterIds: ['character_a'], duration: '자유 대화', published: true, plays: 203 },
-  { id: 'first-talk-b', mode: 'C', title: '문 닫기 전 마지막 손님', summary: '캐릭터 B와 단둘이 나누는 부담 없는 자유 대화', characterNames: ['캐릭터 B'], characterIds: ['character_b'], duration: '자유 대화', published: true, plays: 41 },
-  { id: 'first-talk-duo', mode: 'C', title: '둘이 함께 듣는 이야기', summary: '루미와 캐릭터 B가 함께 있는 자리에서 각자의 기억으로 반응하는 대화', characterNames: ['루미', '캐릭터 B'], characterIds: ['character_a', 'character_b'], duration: '자유 대화', published: true, plays: 12 },
+  { id: 'first-talk', mode: 'C', title: '공방이 문을 닫은 뒤', summary: '말할 준비가 될 때까지 루미의 일상을 따라가며 천천히 대화를 시작하는 이야기', characterNames: ['루미'], characterIds: ['character_a'], duration: '자유 대화', published: true, plays: 203, opening: '마침 나도 공방 문을 닫으려던 참이었어. 처음부터 말하려니 조금 어색할 수 있겠다. 말하기 힘들면 내 이야기만 들어도 괜찮아.' },
+  { id: 'first-talk-b', mode: 'C', title: '문 닫기 전 마지막 손님', summary: '캐릭터 B와 단둘이 나누는 부담 없는 자유 대화', characterNames: ['캐릭터 B'], characterIds: ['character_b'], duration: '자유 대화', published: true, plays: 41, opening: '어서 와, 마침 나도 오늘 대화 상대가 필요했어. 편하게 아무 얘기나 시작해도 괜찮아.' },
+  { id: 'first-talk-duo', mode: 'C', title: '둘이 함께 듣는 이야기', summary: '루미와 캐릭터 B가 함께 있는 자리에서 각자의 기억으로 반응하는 대화', characterNames: ['루미', '캐릭터 B'], characterIds: ['character_a', 'character_b'], duration: '자유 대화', published: true, plays: 12, opening: '오늘은 둘이 같이 있으니까 편하게 이야기해도 돼. 무슨 얘기부터 할까?' },
 ]
 
 const initialDrafts: Record<Mode, ScenarioDraft> = {
@@ -332,10 +334,10 @@ function Field({ label, required, help, children }: { label: string; required?: 
 }
 
 function CharacterEditor({ character, onCancel, onSave }: { character: Character | null; onCancel: () => void; onSave: (character: Character) => void }) {
-  const [form, setForm] = useState<Character>(character ?? { id: `character-${Date.now()}`, name: '', nickname: '', concept: '', persona: '', traits: [], speech: '반말', length: '보통', relation: '편한 친구', voice: '부드럽고 편안한 목소리', accent: 'violet', updated: '방금 수정' })
+  const [form, setForm] = useState<Character>(character ?? { id: `character-${Date.now()}`, name: '', occupation: '', concept: '', persona: '', traits: [], speech: '반말', length: '보통', relation: '편한 친구', voice: '부드럽고 편안한 목소리', accent: 'violet', updated: '방금 수정' })
   const update = <K extends keyof Character>(key: K, value: Character[K]) => setForm((current) => ({ ...current, [key]: value }))
   const toggleTrait = (trait: string) => update('traits', form.traits.includes(trait) ? form.traits.filter((item) => item !== trait) : form.traits.length < 4 ? [...form.traits, trait] : form.traits)
-  const valid = form.name.trim() && form.concept.trim().length >= 50 && form.traits.length > 0
+  const valid = form.name.trim() && form.occupation.trim() && form.traits.length > 0
   const [activeEditorSection, setActiveEditorSection] = useState(0)
   const editorSections = ['기본 정보', '성격·관계·대화', '목소리와 외형', '추가 설정']
   const moveToEditorSection = (index: number) => {
@@ -352,11 +354,11 @@ function CharacterEditor({ character, onCancel, onSave }: { character: Character
     return () => observer.disconnect()
   }, [])
   return <div className="page editor-page">
-    <div className="editor-titlebar"><button type="button" className="back-button" onClick={onCancel}>←</button><div><span className="section-eyebrow">CHARACTER CUSTOMIZATION</span><h1>{character ? `${character.name} 설정 수정` : '새 캐릭터 만들기'}</h1><p>저장한 설정은 이 캐릭터가 등장하는 A·B·C 모드에 공통 적용됩니다.</p></div><div><button type="button" className="outline-button" onClick={onCancel}>취소</button><button type="button" disabled={!valid} className="primary-button" onClick={() => onSave({ ...form, updated: '방금 수정' })}>설정 저장</button></div></div>
+    <div className="editor-titlebar"><button type="button" className="back-button" onClick={onCancel}>←</button><div><span className="section-eyebrow">CHARACTER CUSTOMIZATION</span><h1>{character ? `${character.name} 설정 수정` : '새 캐릭터 만들기'}</h1><p>저장한 설정은 이 캐릭터가 등장하는 A·B·C 모드에 공통 적용됩니다.</p></div><div><button type="button" className="outline-button" onClick={onCancel}>취소</button><button type="button" disabled={!valid} className="primary-button" onClick={() => onSave({ ...form, concept: composeConceptFromFields(form), persona: composePersonaFromFields(form), updated: '방금 수정' })}>설정 저장</button></div></div>
     <div className="editor-layout">
-      <aside className="editor-summary"><div className={`character-preview ${form.accent}`}><PersonAvatar name={form.name || '?'} accent={form.accent} image={form.image} large /><strong>{form.name || '이름을 입력하세요'}</strong><span>{form.relation}</span></div><div className="completion-box"><div><strong>설정 완성도</strong><span>{valid ? '100%' : '60%'}</span></div><i><b style={{ width: valid ? '100%' : '60%' }} /></i><p>이름, 콘셉트, 핵심 성격을 입력하면 저장할 수 있습니다.</p></div><nav className="editor-menu" aria-label="캐릭터 설정 목차">{editorSections.map((label, index) => <button type="button" key={label} className={activeEditorSection === index ? 'active' : ''} onClick={() => moveToEditorSection(index)}><span>{String(index + 1).padStart(2, '0')}</span>{label}</button>)}</nav></aside>
+      <aside className="editor-summary"><div className={`character-preview ${form.accent}`}><PersonAvatar name={form.name || '?'} accent={form.accent} image={form.image} large /><strong>{form.name || '이름을 입력하세요'}</strong><span>{form.relation}</span></div><div className="completion-box"><div><strong>설정 완성도</strong><span>{valid ? '100%' : '60%'}</span></div><i><b style={{ width: valid ? '100%' : '60%' }} /></i><p>이름, 직업, 핵심 성격을 입력하면 저장할 수 있습니다.</p></div><nav className="editor-menu" aria-label="캐릭터 설정 목차">{editorSections.map((label, index) => <button type="button" key={label} className={activeEditorSection === index ? 'active' : ''} onClick={() => moveToEditorSection(index)}><span>{String(index + 1).padStart(2, '0')}</span>{label}</button>)}</nav></aside>
       <main className="editor-form">
-        <section className="form-section"><div className="form-section-title"><span>01</span><div><h2>기본 정보</h2><p>캐릭터의 이름과 삶을 하나의 명확한 콘셉트로 작성합니다.</p></div></div><div className="two-column"><Field label="이름" required><input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="예: 루미" /></Field><Field label="별명" help="선택 사항"><input value={form.nickname} onChange={(event) => update('nickname', event.target.value)} placeholder="친해졌을 때 부를 이름" /></Field></div><Field label="캐릭터 콘셉트" required help={`${form.concept.length}/200 · 50~200자`}><textarea rows={5} maxLength={200} value={form.concept} onChange={(event) => update('concept', event.target.value)} placeholder="이 캐릭터는 어디에서 어떤 삶을 살고 있나요?" /></Field><Field label="행동·대화 지침" help="LLM에 전달되는 개별 캐릭터 프롬프트입니다."><textarea rows={5} maxLength={2000} value={form.persona} onChange={(event) => update('persona', event.target.value)} placeholder="어떤 상황에서 어떻게 반응하고, 어떤 표현을 피해야 하는지 작성하세요." /></Field></section>
+        <section className="form-section"><div className="form-section-title"><span>01</span><div><h2>기본 정보</h2><p>캐릭터의 이름과 직업을 정하면 대화 프롬프트가 자동으로 구성됩니다.</p></div></div><div className="two-column"><Field label="이름" required><input value={form.name} onChange={(event) => update('name', event.target.value)} placeholder="예: 루미" /></Field><Field label="직업" required help="어디서 무슨 일을 하는 사람인지"><input value={form.occupation} onChange={(event) => update('occupation', event.target.value)} placeholder="예: 시계 공방 주인" /></Field></div></section>
         <section className="form-section"><div className="form-section-title"><span>02</span><div><h2>성격과 대화</h2><p>서로 모순되지 않도록 핵심 성격은 최대 4개만 선택합니다.</p></div></div><Field label="핵심 성격" required help={`${form.traits.length}/4 선택`}><div className="select-chips">{traitOptions.map((trait) => <button type="button" className={form.traits.includes(trait) ? 'selected' : ''} key={trait} onClick={() => toggleTrait(trait)}>{trait}</button>)}</div></Field><div className="three-column"><Field label="말투"><select value={form.speech} onChange={(event) => update('speech', event.target.value)}><option>반말</option><option>존댓말</option><option>관계에 따라 변화</option></select></Field><Field label="말의 길이"><select value={form.length} onChange={(event) => update('length', event.target.value)}><option>짧게 말함</option><option>보통</option><option>길게 자세히 말함</option></select></Field><Field label="관계 스타일"><select value={form.relation} onChange={(event) => update('relation', event.target.value)}><option>편한 친구</option><option>다정하게 챙겨주는 연상</option><option>장난을 많이 치는 동생</option><option>조용히 곁을 지키는 동료</option><option>차분하게 이끌어주는 선배</option><option>함께 생활하는 룸메이트</option><option>처음 만나 천천히 친해지는 사이</option></select></Field></div></section>
         <section className="form-section"><div className="form-section-title"><span>03</span><div><h2>목소리와 외형</h2><p>목소리는 샘플을 듣고 선택하고, 캐릭터 이미지는 배경과 분리해 등록합니다.</p></div></div><div className="voice-grid">{['밝고 또렷한 목소리', '낮고 차분한 목소리', '부드럽고 편안한 목소리', '졸린 듯 느긋한 목소리'].map((voice) => <button type="button" key={voice} className={form.voice === voice ? 'selected' : ''} onClick={() => update('voice', voice)}><span>▶</span><div><strong>{voice}</strong><small>8초 샘플 듣기</small></div><i>{form.voice === voice ? '선택됨' : ''}</i></button>)}</div><div className="upload-grid"><label className={`upload-panel ${form.image ? 'has-image' : ''}`}><input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) update('image', URL.createObjectURL(file)) }} />{form.image ? <img src={form.image} alt="등록한 캐릭터 미리보기" /> : <span>＋</span>}<strong>{form.image ? '캐릭터 이미지 변경' : '캐릭터 이미지 등록'}</strong><small>배경 없는 PNG 권장 · 최대 10MB</small></label><div className="asset-explanation"><strong>캐릭터와 배경은 별도 자산입니다</strong><p>캐릭터 이미지는 한 번 등록하고 여러 시나리오 배경에 재사용합니다. 장면 미리보기에서 두 레이어를 자동으로 합성하며, 별도 소품 등록은 사용하지 않습니다.</p></div></div></section>
         <section className="form-section"><div className="form-section-title"><span>04</span><div><h2>추가 캐릭터성</h2><p>위 설정으로 표현하기 어려운 습관이나 금지 행동만 간결하게 추가합니다.</p></div></div><Field label="추가 프롬프트" help="선택 사항 · 최대 500자"><textarea rows={4} maxLength={500} placeholder="예: 사용자가 침묵하면 재촉하지 않고 자신의 일상 이야기를 짧게 들려준다." /></Field></section>
@@ -934,7 +936,7 @@ function PushToTalkMic({ state, transcript, disabled, onToggle }: { state: MicSt
 
 function CModeConversationRunner({ scenario, characters, onExit }: { scenario: Scenario; characters: Character[]; onExit: () => void }) {
   const primary = characters[0]
-  const opening = '마침 나도 마무리하려던 참이었어. 처음부터 말하려니 조금 어색할 수 있겠다. 말하기 힘들면 내 이야기만 들어도 괜찮아.'
+  const opening = scenario.opening ?? '마침 나도 마무리하려던 참이었어. 처음부터 말하려니 조금 어색할 수 있겠다. 말하기 힘들면 내 이야기만 들어도 괜찮아.'
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<MessageApi[]>([{
     id: 'opening', speaker_type: 'CHARACTER', speaker_id: primary.id, content: opening, input_mode: 'SYSTEM',
@@ -1121,11 +1123,25 @@ function ResultPage({ result, onRestart, onList }: { result: ResultData; onResta
   return <div className="result-page"><header className="result-header"><Logo /><div><ModeBadge mode={result.scenario.mode} /><span>{result.scenario.title}</span></div><button type="button" className="outline-button" onClick={onList}>시나리오 목록</button></header><main className="result-content"><section className="ending-hero"><span>내가 도달한 결말</span><h1>{result.ending}</h1><p>{result.story}</p></section><section className="reason-card"><span>왜 이런 결말이 나왔을까요?</span><p>{result.reason}</p></section><div className="feedback-layout"><div><section className="feedback-card effective"><div className="feedback-label"><span>✓</span>이번 대화에서 효과적이었던 부분</div><ul>{result.effective.map((item) => <li key={item}>{item}</li>)}</ul><blockquote>“{result.evidence}”</blockquote></section>{result.missed && <section className="feedback-card missed"><div className="feedback-label"><span>!</span>한 번 더 생각해볼 부분</div><p>{result.missed}</p></section>}<section className="feedback-card remember"><div className="feedback-label"><span>→</span>다음에 비슷한 상황이 온다면</div><p>{result.remember}</p></section></div><aside><section className="feedback-card reaction"><span>캐릭터의 마지막 반응</span><p>{result.reaction}</p><div>{result.relation}</div></section></aside></div>{hiddenEndingCount > 0 && <section className="discovered-endings"><div><span>다른 이야기의 가능성</span><h2>아직 발견하지 않은 결말이 {hiddenEndingCount}개 있어요</h2><p>결말의 이름과 조건은 공개하지 않습니다. 다른 방식으로 대화하면 새로운 결과를 발견할 수 있습니다.</p></div><div className="locked-result-grid">{Array.from({ length: hiddenEndingCount }).map((_, index) => <article key={index}><span>▣</span><strong>잠긴 결말</strong><small>조건 비공개</small></article>)}</div></section>}<div className="result-actions"><button type="button" className="primary-button" onClick={onRestart}>처음부터 다시 하기</button><button type="button" className="outline-button" onClick={onList}>다른 시나리오 보기</button></div></main></div>
 }
 
+function composeConceptFromFields(form: Pick<Character, 'name' | 'occupation' | 'traits' | 'relation' | 'speech'>): string {
+  const occupationText = form.occupation.trim() ? `${form.occupation.trim()}(으)로 지내고 있다.` : '평범한 일상을 보내고 있다.'
+  const traitsText = form.traits.length ? `평소 ${form.traits.join(', ')} 성격으로 알려져 있다.` : ''
+  const relationText = `사용자와는 ${form.relation} 사이로 지낸다.`
+  const speechText = `대화할 때 ${form.speech} 말투를 쓴다.`
+  const composed = `${form.name.trim() || '이 캐릭터'}은(는) ${occupationText} ${traitsText} ${relationText} ${speechText}`.replace(/\s+/g, ' ').trim()
+  return composed.length > 200 ? composed.slice(0, 200) : composed
+}
+
+function composePersonaFromFields(form: Pick<Character, 'traits' | 'speech' | 'length' | 'relation'>): string {
+  const traitsText = form.traits.length ? form.traits.join(', ') : '자연스러운'
+  return `${traitsText} 성격이 말투와 반응에 자연스럽게 드러난다. ${form.speech} 말투를 유지하며 ${form.length} 정도의 길이로 대답한다. 사용자와의 관계(${form.relation})에 맞게 반응하고, 과도한 상담 문구나 상투적인 표현은 쓰지 않는다.`
+}
+
 function characterFromApi(value: CharacterApi): Character {
   return {
     id: value.id,
     name: value.name,
-    nickname: value.nickname ?? '',
+    occupation: '',
     concept: value.concept,
     persona: value.persona,
     traits: value.traits,
@@ -1141,7 +1157,7 @@ function characterFromApi(value: CharacterApi): Character {
 function characterToApi(value: Character) {
   return {
     name: value.name,
-    nickname: value.nickname || null,
+    nickname: null,
     concept: value.concept,
     persona: value.persona,
     traits: value.traits,
