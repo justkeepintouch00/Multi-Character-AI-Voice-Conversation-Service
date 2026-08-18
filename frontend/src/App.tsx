@@ -947,30 +947,12 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
   const conversationRequest = useRef<ReturnType<typeof createConversation> | null>(null)
   const recognitionRef = useRef<RecognitionInstance | null>(null)
   const transcriptRef = useRef('')
+  const committedTranscriptRef = useRef('')
+  const stopRequestedRef = useRef(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const characterIds = characters.map((item) => item.id)
   const characterIdsKey = characterIds.join(',')
   const findCharacter = (id: string) => characters.find((item) => item.id === id) ?? primary
-
-  useEffect(() => {
-    if (!conversationRequest.current) {
-      conversationRequest.current = createConversation(characterIds, primary.id, opening)
-    }
-    let active = true
-    conversationRequest.current
-      .then((conversation) => {
-        if (!active) return
-        setConversationId(conversation.id)
-        setStatus('ready')
-      })
-      .catch((cause: unknown) => {
-        if (!active) return
-        setError(cause instanceof Error ? cause.message : '대화를 시작하지 못했습니다.')
-        setStatus('error')
-      })
-    return () => { active = false }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characterIdsKey])
 
   const playTurns = async (turns: SceneTurnApi[]) => {
     for (const turn of turns) {
@@ -992,6 +974,27 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
     }
   }
 
+  useEffect(() => {
+    if (!conversationRequest.current) {
+      conversationRequest.current = createConversation(characterIds, primary.id, opening)
+    }
+    let active = true
+    conversationRequest.current
+      .then((conversation) => {
+        if (!active) return
+        setConversationId(conversation.id)
+        setStatus('ready')
+        void playTurns([{ speaker_id: primary.id, to: 'USER', emotion: 'calm', text: opening }])
+      })
+      .catch((cause: unknown) => {
+        if (!active) return
+        setError(cause instanceof Error ? cause.message : '대화를 시작하지 못했습니다.')
+        setStatus('error')
+      })
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [characterIdsKey])
+
   const sendContent = async (rawValue: string) => {
     const content = rawValue.trim()
     if (!content || !conversationId || status === 'thinking') return
@@ -1010,40 +1013,58 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
   }
 
   const stopRecording = () => {
+    stopRequestedRef.current = true
     recognitionRef.current?.stop()
     recognitionRef.current = null
     setMicState('idle')
     const finalText = transcriptRef.current.trim()
     transcriptRef.current = ''
+    committedTranscriptRef.current = ''
     if (finalText) void sendContent(finalText)
   }
 
   const startRecording = () => {
     const Recognition = window.SpeechRecognition ?? window.webkitSpeechRecognition
     if (!Recognition) { setMicState('unsupported'); return }
-    const recognition = new Recognition()
+    stopRequestedRef.current = false
     transcriptRef.current = ''
+    committedTranscriptRef.current = ''
     setTranscript('')
-    recognition.lang = 'ko-KR'
-    recognition.continuous = true
-    recognition.interimResults = true
-    recognition.onstart = () => setMicState('recording')
-    recognition.onresult = (event) => {
-      let combined = ''
-      for (let index = 0; index < event.results.length; index += 1) {
-        combined += event.results[index][0].transcript
+
+    const beginSession = () => {
+      const recognition = new Recognition()
+      recognition.lang = 'ko-KR'
+      recognition.continuous = true
+      recognition.interimResults = true
+      recognition.onstart = () => setMicState('recording')
+      recognition.onresult = (event) => {
+        let sessionText = ''
+        for (let index = 0; index < event.results.length; index += 1) {
+          sessionText += event.results[index][0].transcript
+        }
+        const combined = `${committedTranscriptRef.current} ${sessionText}`.trim()
+        transcriptRef.current = combined
+        setTranscript(combined)
       }
-      transcriptRef.current = combined.trim()
-      setTranscript(transcriptRef.current)
+      recognition.onerror = (event) => {
+        // 무음(no-speech) 등은 onend가 뒤따라오므로 거기서 재시작한다.
+        // 권한 거부만 진짜로 멈춘다.
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          stopRequestedRef.current = true
+          setMicState('denied')
+        }
+      }
+      recognition.onend = () => {
+        if (stopRequestedRef.current) { setMicState('idle'); return }
+        // 브라우저 음성 인식 세션이 침묵 타임아웃 등으로 스스로 끝난 경우다.
+        // 사용자가 버튼을 다시 누르기 전까지는 계속 듣는다.
+        committedTranscriptRef.current = transcriptRef.current
+        beginSession()
+      }
+      recognitionRef.current = recognition
+      try { recognition.start() } catch { setMicState('idle') }
     }
-    recognition.onerror = (event) => {
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') setMicState('denied')
-    }
-    recognition.onend = () => {
-      setMicState((current) => (current === 'recording' ? 'idle' : current))
-    }
-    recognitionRef.current = recognition
-    try { recognition.start() } catch { setMicState('idle') }
+    beginSession()
   }
 
   const toggleRecording = () => {
