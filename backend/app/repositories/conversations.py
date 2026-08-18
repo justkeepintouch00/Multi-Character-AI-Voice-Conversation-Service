@@ -28,6 +28,7 @@ class ConversationSnapshot:
     mode: str
     status: str
     character_ids: list[str]
+    memory_sharing_mode: str
     created_at: datetime
     updated_at: datetime
     closed_at: datetime | None
@@ -42,6 +43,7 @@ class ConversationRepository(Protocol):
         mode: str,
         character_ids: list[str],
         opening_message: ConversationOpeningMessage | None = None,
+        memory_sharing_mode: str = "NONE",
     ) -> ConversationSnapshot: ...
 
     def get_conversation(
@@ -102,8 +104,14 @@ class SQLAlchemyConversationRepository:
         mode: str,
         character_ids: list[str],
         opening_message: ConversationOpeningMessage | None = None,
+        memory_sharing_mode: str = "NONE",
     ) -> ConversationSnapshot:
-        conversation = Conversation(user_id=context.user_id, mode=mode, status="ACTIVE")
+        conversation = Conversation(
+            user_id=context.user_id,
+            mode=mode,
+            status="ACTIVE",
+            memory_sharing_mode=memory_sharing_mode,
+        )
         self.session.add(conversation)
         self.session.flush()
         for display_order, public_id in enumerate(character_ids):
@@ -308,6 +316,7 @@ class SQLAlchemyConversationRepository:
             mode=conversation.mode,
             status=conversation.status,
             character_ids=character_ids,
+            memory_sharing_mode=conversation.memory_sharing_mode,
             created_at=conversation.created_at,
             updated_at=conversation.updated_at,
             closed_at=conversation.closed_at,

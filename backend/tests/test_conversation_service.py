@@ -27,6 +27,7 @@ class FakeRepository:
         self.status = "ACTIVE"
         self.saved_user_message: MessageRead | None = None
         self.saved_plan: ScenePlan | None = None
+        self.memory_sharing_mode = "NONE"
         self.character_ids = ["character_a", "character_b"]
         self.character_instance_ids = {
             "character_a": uuid4(),
@@ -62,9 +63,11 @@ class FakeRepository:
         mode: str,
         character_ids: list[str],
         opening_message=None,
+        memory_sharing_mode: str = "NONE",
     ) -> ConversationSnapshot:
         assert context == self.context
         del opening_message
+        self.memory_sharing_mode = memory_sharing_mode
         return self._snapshot(mode=mode, character_ids=character_ids)
 
     def get_conversation(
@@ -164,6 +167,7 @@ class FakeRepository:
             mode=mode,
             status=self.status,
             character_ids=character_ids or ["character_a", "character_b"],
+            memory_sharing_mode=self.memory_sharing_mode,
             created_at=NOW,
             updated_at=NOW,
             closed_at=NOW if self.status == "COMPLETED" else None,
@@ -176,6 +180,7 @@ class FakeMemoryRepository:
     def __init__(self, *, memories_by_viewer: dict[UUID, list[MemoryRecord]]) -> None:
         self.memories_by_viewer = memories_by_viewer
         self.requested_viewers: list[UUID] = []
+        self.created_memories: list[dict] = []
 
     def retrieve(
         self,
@@ -189,10 +194,28 @@ class FakeMemoryRepository:
         self.requested_viewers.append(viewer_character_instance_id)
         return self.memories_by_viewer.get(viewer_character_instance_id, [])
 
+    def create_memory(self, **kwargs) -> MemoryRecord:
+        self.created_memories.append(kwargs)
+        return MemoryRecord(
+            id=uuid4(),
+            content=kwargs["content"],
+            memory_type=kwargs["memory_type"],
+            sensitivity=kwargs["sensitivity"],
+            owner_character_instance_id=kwargs["owner_character_instance_id"],
+        )
+
 
 class FakeSceneDirector:
-    def __init__(self, *, second_speaker_needed: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        second_speaker_needed: bool = False,
+        primary_extracted_memory: dict | None = None,
+        primary_disclosed_memory_ids: list[str] | None = None,
+    ) -> None:
         self.second_speaker_needed = second_speaker_needed
+        self.primary_extracted_memory = primary_extracted_memory
+        self.primary_disclosed_memory_ids = primary_disclosed_memory_ids or []
         self.requests: list[SpeakerTurnRequest] = []
 
     async def create_speaker_turn(
@@ -209,6 +232,9 @@ class FakeSceneDirector:
                 second_speaker_reason=(
                     "DIFFERING_VIEWPOINT" if self.second_speaker_needed else "NONE"
                 ),
+                extracted_memory=self.primary_extracted_memory
+                or {"has_memory": False, "content": "", "sensitivity": "PERSONAL"},
+                disclosed_memory_ids=self.primary_disclosed_memory_ids,
             )
         return SpeakerTurnResult(
             speaker_id=request.speaker.id,
@@ -353,3 +379,97 @@ def test_completed_conversation_rejects_new_message() -> None:
                 MessageCreate(content="완료된 대화에 보낼 메시지"),
             )
         )
+
+
+def test_extracted_memory_is_stored_with_shared_mode_acl() -> None:
+    repository = FakeRepository()
+    repository.memory_sharing_mode = "SHARED"
+    scene_director = FakeSceneDirector(
+        primary_extracted_memory={
+            "has_memory": True,
+            "content": "사용자는 다음 주 면접이 걱정된다고 말했다.",
+            "sensitivity": "PRIVATE",
+        }
+    )
+    memory_repository = FakeMemoryRepository(memories_by_viewer={})
+    service = ConversationService(repository, scene_director, memory_repository)
+
+    asyncio.run(
+        service.create_message(
+            repository.conversation_id,
+            MessageCreate(content="오늘 회사에서 조금 힘들었어."),
+        )
+    )
+
+    # character_b is the primary speaker here (see the whoever-spoke-last
+    # test above), so it owns the extracted memory.
+    assert len(memory_repository.created_memories) == 1
+    created = memory_repository.created_memories[0]
+    assert created["content"] == "사용자는 다음 주 면접이 걱정된다고 말했다."
+    assert created["owner_character_instance_id"] == (
+        repository.character_instance_ids["character_b"]
+    )
+    assert set(created["readable_by"]) == {
+        repository.character_instance_ids["character_a"],
+        repository.character_instance_ids["character_b"],
+    }
+
+
+def test_extracted_memory_stays_private_when_sharing_mode_is_none() -> None:
+    repository = FakeRepository()
+    repository.memory_sharing_mode = "NONE"
+    scene_director = FakeSceneDirector(
+        primary_extracted_memory={
+            "has_memory": True,
+            "content": "사용자는 다음 주 면접이 걱정된다고 말했다.",
+            "sensitivity": "PRIVATE",
+        }
+    )
+    memory_repository = FakeMemoryRepository(memories_by_viewer={})
+    service = ConversationService(repository, scene_director, memory_repository)
+
+    asyncio.run(
+        service.create_message(
+            repository.conversation_id,
+            MessageCreate(content="오늘 회사에서 조금 힘들었어."),
+        )
+    )
+
+    created = memory_repository.created_memories[0]
+    assert created["readable_by"] == [
+        repository.character_instance_ids["character_b"]
+    ]
+
+
+def test_disclosed_memory_surfaces_as_a_share_suggestion_without_changing_acl() -> None:
+    repository = FakeRepository()
+    character_b_id = repository.character_instance_ids["character_b"]
+    disclosed_memory = MemoryRecord(
+        id=uuid4(),
+        content="B만 아는 비공개 반려동물 이야기",
+        memory_type="RELATIONSHIP",
+        sensitivity="PRIVATE",
+        owner_character_instance_id=character_b_id,
+    )
+    memory_repository = FakeMemoryRepository(
+        memories_by_viewer={character_b_id: [disclosed_memory]}
+    )
+    scene_director = FakeSceneDirector(
+        primary_disclosed_memory_ids=[str(disclosed_memory.id)]
+    )
+    service = ConversationService(repository, scene_director, memory_repository)
+
+    result = asyncio.run(
+        service.create_message(
+            repository.conversation_id,
+            MessageCreate(content="오늘 회사에서 조금 힘들었어."),
+        )
+    )
+
+    assert len(result.share_suggestions) == 1
+    suggestion = result.share_suggestions[0]
+    assert suggestion.memory_id == disclosed_memory.id
+    assert suggestion.from_character_id == "character_b"
+    assert suggestion.to_character_id == "character_a"
+    # Speaking it aloud is not itself a grant -- no ACL call happened.
+    assert memory_repository.created_memories == []

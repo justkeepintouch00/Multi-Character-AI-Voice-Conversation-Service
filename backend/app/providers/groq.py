@@ -74,16 +74,17 @@ class GroqSceneDirector:
         other_participant_ids = [
             character.id for character in request.other_participants
         ]
+        memory_context_ids = [item.id for item in request.memory_context]
         if request.role == "PRIMARY":
             instructions = PRIMARY_SPEAKER_INSTRUCTIONS
             schema = primary_speaker_turn_schema(
-                request.speaker.id, other_participant_ids
+                request.speaker.id, other_participant_ids, memory_context_ids
             )
             schema_name = "primary_speaker_turn"
         else:
             instructions = SECONDARY_SPEAKER_INSTRUCTIONS
             schema = secondary_speaker_turn_schema(
-                request.speaker.id, other_participant_ids
+                request.speaker.id, other_participant_ids, memory_context_ids
             )
             schema_name = "secondary_speaker_turn"
 

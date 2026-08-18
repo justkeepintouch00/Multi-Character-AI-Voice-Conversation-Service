@@ -82,6 +82,7 @@ class FakeConversationService:
             mode="TALK",
             status="ACTIVE",
             character_ids=character_ids,
+            memory_sharing_mode="NONE",
             created_at=NOW,
             updated_at=NOW,
             closed_at=None,

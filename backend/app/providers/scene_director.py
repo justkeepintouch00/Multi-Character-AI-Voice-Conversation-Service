@@ -61,11 +61,32 @@ COMMON_SPEAKER_POLICY = """
 """.strip()
 
 
+MEMORY_TRACKING_POLICY = """
+기억 기록과 공개 보고 정책 (extracted_memory, disclosed_memory_ids):
+- extracted_memory는 이번 사용자 발화에서 앞으로도 기억할 가치가 있는 새로운 사실을
+  당신이 방금 알게 되었을 때만 has_memory=true로 채운다. 예: 사용자의 상황, 감정의
+  원인, 선호, 관계, 반복되는 고민처럼 다음에도 참고할 만한 사실.
+- 이미 memory_context에 있는 사실을 반복해서 다시 저장하지 않는다. 사소한 잡담,
+  일회성 감탄, 이미 아는 내용이면 has_memory=false로 두고 content는 비운다.
+- 캐릭터가 추측하거나 해석한 감정을 사실처럼 저장하지 않는다. 사용자가 실제로 말한
+  내용만 content에 담는다.
+- content는 한두 문장으로 짧고 구체적으로 쓴다("사용자는 ~라고 말했다" 형태).
+- sensitivity는 개인적이고 민감할수록 PRIVATE 또는 HIGH를, 가볍고 일상적인 사실은
+  PERSONAL 또는 PUBLIC을 사용한다.
+- disclosed_memory_ids는 이번 발화에서 당신이 memory_context에 있는 항목 중 하나를
+  실제로 말로 옮겨서 다른 참여 캐릭터(other_participants)에게 들려준 경우에만, 그
+  memory_context 항목의 id를 넣는다. 말하지 않은 기억, 혼자만 알고 있는 기억은 절대
+  넣지 않는다. 다른 캐릭터가 없는 턴이면 항상 빈 배열로 둔다.
+""".strip()
+
+
 PRIMARY_SPEAKER_INSTRUCTIONS = f"""
 당신은 2인 이하 캐릭터 음성 대화 서비스의 Scene Director다. 이번 호출에서는 요청에
 지정된 한 명의 캐릭터(speaker)가 사용자에게 처음 답할 차례를 작성한다.
 
 {COMMON_SPEAKER_POLICY}
+
+{MEMORY_TRACKING_POLICY}
 
 발화권 배치 정책:
 - 기본적으로 당신 혼자 답한다. needs_second_speaker는 예외적인 경우에만 true로 둔다.
@@ -93,6 +114,8 @@ SECONDARY_SPEAKER_INSTRUCTIONS = f"""
 
 {COMMON_SPEAKER_POLICY}
 
+{MEMORY_TRACKING_POLICY}
+
 이어 말하기 정책:
 - recent_messages 끝에 있는 앞 캐릭터의 실제 발언을 들은 상태로 작성하며, 필요하면
   "맞아", "나는 조금 다르게 봐"처럼 짧게 반응한 뒤 다른 관점 1문장만 말한다.
@@ -106,8 +129,37 @@ SECONDARY_SPEAKER_INSTRUCTIONS = f"""
 """.strip()
 
 
+def _extracted_memory_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "has_memory": {"type": "boolean"},
+            "content": {"type": "string", "maxLength": 500},
+            "sensitivity": {
+                "type": "string",
+                "enum": ["PUBLIC", "PERSONAL", "PRIVATE", "HIGH"],
+            },
+        },
+        "required": ["has_memory", "content", "sensitivity"],
+    }
+
+
+def _disclosed_memory_ids_schema(memory_context_ids: list[str]) -> dict[str, Any]:
+    # Constraining items to the ids actually present on this request means
+    # the model cannot report disclosing a memory it was never given,
+    # independent of whatever the prompt says.
+    return {
+        "type": "array",
+        "maxItems": 5,
+        "items": {"type": "string", "enum": memory_context_ids} if memory_context_ids else {"type": "string", "enum": []},
+    }
+
+
 def primary_speaker_turn_schema(
-    speaker_id: str, other_participant_ids: list[str]
+    speaker_id: str,
+    other_participant_ids: list[str],
+    memory_context_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "type": "object",
@@ -125,6 +177,10 @@ def primary_speaker_turn_schema(
                 "type": "string",
                 "enum": ["NONE", "DIFFERING_VIEWPOINT", "AGREEMENT_BACKUP"],
             },
+            "extracted_memory": _extracted_memory_schema(),
+            "disclosed_memory_ids": _disclosed_memory_ids_schema(
+                memory_context_ids or []
+            ),
         },
         "required": [
             "speaker_id",
@@ -133,12 +189,16 @@ def primary_speaker_turn_schema(
             "text",
             "needs_second_speaker",
             "second_speaker_reason",
+            "extracted_memory",
+            "disclosed_memory_ids",
         ],
     }
 
 
 def secondary_speaker_turn_schema(
-    speaker_id: str, other_participant_ids: list[str]
+    speaker_id: str,
+    other_participant_ids: list[str],
+    memory_context_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "type": "object",
@@ -151,8 +211,19 @@ def secondary_speaker_turn_schema(
             },
             "emotion": {"type": "string", "enum": list(_EMOTIONS)},
             "text": {"type": "string", "minLength": 1},
+            "extracted_memory": _extracted_memory_schema(),
+            "disclosed_memory_ids": _disclosed_memory_ids_schema(
+                memory_context_ids or []
+            ),
         },
-        "required": ["speaker_id", "to", "emotion", "text"],
+        "required": [
+            "speaker_id",
+            "to",
+            "emotion",
+            "text",
+            "extracted_memory",
+            "disclosed_memory_ids",
+        ],
     }
 
 

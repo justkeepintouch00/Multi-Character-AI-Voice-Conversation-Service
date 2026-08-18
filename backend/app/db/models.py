@@ -359,6 +359,10 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "status IN ('ACTIVE', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'ARCHIVED')",
             name="status_values",
         ),
+        CheckConstraint(
+            "memory_sharing_mode IN ('NONE', 'SHARED', 'FIRST_ONLY', 'SECOND_ONLY')",
+            name="memory_sharing_mode_values",
+        ),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -370,6 +374,12 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(
         String(16), default="ACTIVE", server_default="ACTIVE", nullable=False
+    )
+    # Only meaningful when the conversation has 2 participants; governs the
+    # default ACL for memories auto-extracted from this conversation's
+    # messages (see ConversationService._maybe_store_extracted_memory).
+    memory_sharing_mode: Mapped[str] = mapped_column(
+        String(16), default="NONE", server_default="NONE", nullable=False
     )
     closed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

@@ -8,12 +8,13 @@ from app.repositories.conversations import (
     ConversationRepository,
     ConversationSnapshot,
 )
-from app.repositories.memory import MemoryRepository
+from app.repositories.memory import MemoryRecord, MemoryRepository
 from app.schemas.conversation import ConversationCreate, ConversationRead
 from app.schemas.message import (
     MessageCreate,
     MessageExchangeResponse,
     MessageListResponse,
+    ShareSuggestion,
 )
 from app.schemas.scene_plan import RecentMessage, SceneCharacter, ScenePlan, SceneTurn
 from app.schemas.speaker_turn import (
@@ -49,6 +50,7 @@ class ConversationService:
             request.mode,
             request.character_ids,
             request.opening_message,
+            request.memory_sharing_mode,
         )
         return self._conversation_read(snapshot)
 
@@ -95,10 +97,11 @@ class ConversationService:
         if recent_messages and recent_messages[-1].role == "USER":
             recent_messages = recent_messages[:-1]
 
-        turns = await self._generate_turns(
+        turns, share_suggestions = await self._generate_turns(
             context=context,
             conversation_id=conversation_id,
             character_ids=conversation.character_ids,
+            memory_sharing_mode=conversation.memory_sharing_mode,
             user_text=request.content,
             recent_messages=recent_messages,
         )
@@ -118,6 +121,7 @@ class ConversationService:
             user_message=user_message,
             scene_plan=plan,
             assistant_messages=assistant_messages,
+            share_suggestions=share_suggestions,
         )
 
     def list_messages(
@@ -139,9 +143,10 @@ class ConversationService:
         context: DevelopmentContext,
         conversation_id: UUID,
         character_ids: list[str],
+        memory_sharing_mode: str,
         user_text: str,
         recent_messages: list[RecentMessage],
-    ) -> list[SceneTurn]:
+    ) -> tuple[list[SceneTurn], list[ShareSuggestion]]:
         """Generate 1-2 turns with each speaker getting an independent LLM call.
 
         The turn-arbiter step (``_order_speakers``) only ever looks at public
@@ -151,7 +156,7 @@ class ConversationService:
         character's private memory is never read into this request.
         """
         if not character_ids:
-            return []
+            return [], []
 
         first_id, second_id = self._order_speakers(
             character_ids, context.character_profiles, user_text, recent_messages
@@ -161,7 +166,7 @@ class ConversationService:
             context.character_profiles[second_id] if second_id else None
         )
 
-        primary_result = await self._request_turn(
+        primary_result, primary_records = await self._request_turn(
             role="PRIMARY",
             context=context,
             conversation_id=conversation_id,
@@ -172,6 +177,20 @@ class ConversationService:
             recent_messages=recent_messages,
         )
         turns = [self._to_scene_turn(primary_result)]
+        share_suggestions = self._build_share_suggestions(
+            result=primary_result,
+            records=primary_records,
+            speaker_id=first_id,
+            other_participants=[second_profile] if second_profile else [],
+        )
+        self._maybe_store_extracted_memory(
+            context=context,
+            conversation_id=conversation_id,
+            character_ids=character_ids,
+            memory_sharing_mode=memory_sharing_mode,
+            owner_character_id=first_id,
+            result=primary_result,
+        )
 
         if second_id is not None and primary_result.needs_second_speaker:
             secondary_recent = [
@@ -182,7 +201,7 @@ class ConversationService:
                     content=primary_result.text,
                 ),
             ]
-            secondary_result = await self._request_turn(
+            secondary_result, secondary_records = await self._request_turn(
                 role="SECONDARY",
                 context=context,
                 conversation_id=conversation_id,
@@ -193,8 +212,24 @@ class ConversationService:
                 recent_messages=secondary_recent,
             )
             turns.append(self._to_scene_turn(secondary_result))
+            share_suggestions.extend(
+                self._build_share_suggestions(
+                    result=secondary_result,
+                    records=secondary_records,
+                    speaker_id=second_id,
+                    other_participants=[first_profile],
+                )
+            )
+            self._maybe_store_extracted_memory(
+                context=context,
+                conversation_id=conversation_id,
+                character_ids=character_ids,
+                memory_sharing_mode=memory_sharing_mode,
+                owner_character_id=second_id,
+                result=secondary_result,
+            )
 
-        return turns
+        return turns, share_suggestions
 
     async def _request_turn(
         self,
@@ -207,7 +242,7 @@ class ConversationService:
         speaker_profile: SceneCharacter,
         other_participants: list[SceneCharacter],
         recent_messages: list[RecentMessage],
-    ) -> SpeakerTurnResult:
+    ) -> tuple[SpeakerTurnResult, list[MemoryRecord]]:
         memory_records = self.memory_repository.retrieve(
             user_id=context.user_id,
             viewer_character_instance_id=context.character_instance_ids[speaker_id],
@@ -222,6 +257,7 @@ class ConversationService:
                 recent_messages=recent_messages,
                 memory_context=[
                     MemoryContextItem(
+                        id=str(record.id),
                         content=record.content,
                         memory_type=record.memory_type,
                         sensitivity=record.sensitivity,
@@ -230,7 +266,92 @@ class ConversationService:
                 ],
             )
         )
-        return result
+        return result, memory_records
+
+    def _build_share_suggestions(
+        self,
+        *,
+        result: SpeakerTurnResult,
+        records: list[MemoryRecord],
+        speaker_id: str,
+        other_participants: list[SceneCharacter],
+    ) -> list[ShareSuggestion]:
+        if not result.disclosed_memory_ids or not other_participants:
+            return []
+        records_by_id = {str(record.id): record for record in records}
+        to_character_id = other_participants[0].id
+        suggestions: list[ShareSuggestion] = []
+        for raw_id in result.disclosed_memory_ids:
+            record = records_by_id.get(raw_id)
+            # The schema already constrains disclosed_memory_ids to ids that
+            # were on this request, but a record lookup miss is tolerated
+            # rather than trusted blindly -- never surface a suggestion for
+            # a memory we can't independently confirm the speaker actually had.
+            if record is None:
+                continue
+            suggestions.append(
+                ShareSuggestion(
+                    memory_id=record.id,
+                    from_character_id=speaker_id,
+                    to_character_id=to_character_id,
+                    content_preview=record.content[:120],
+                )
+            )
+        return suggestions
+
+    def _maybe_store_extracted_memory(
+        self,
+        *,
+        context: DevelopmentContext,
+        conversation_id: UUID,
+        character_ids: list[str],
+        memory_sharing_mode: str,
+        owner_character_id: str,
+        result: SpeakerTurnResult,
+    ) -> None:
+        if not result.extracted_memory.has_memory:
+            return
+        content = result.extracted_memory.content.strip()
+        if not content:
+            return
+        readable_by_ids = self._readable_by_for_new_memory(
+            memory_sharing_mode=memory_sharing_mode,
+            character_ids=character_ids,
+            owner_character_id=owner_character_id,
+        )
+        self.memory_repository.create_memory(
+            user_id=context.user_id,
+            content=content,
+            memory_type="RELATIONSHIP",
+            owner_character_instance_id=context.character_instance_ids[
+                owner_character_id
+            ],
+            sensitivity=result.extracted_memory.sensitivity,
+            granted_by_user_id=context.user_id,
+            readable_by=[
+                context.character_instance_ids[character_id]
+                for character_id in readable_by_ids
+            ],
+            source_conversation_id=conversation_id,
+        )
+
+    @staticmethod
+    def _readable_by_for_new_memory(
+        *,
+        memory_sharing_mode: str,
+        character_ids: list[str],
+        owner_character_id: str,
+    ) -> list[str]:
+        if len(character_ids) < 2:
+            return [owner_character_id]
+        first_id, second_id = character_ids[0], character_ids[1]
+        if memory_sharing_mode == "SHARED":
+            return [first_id, second_id]
+        if memory_sharing_mode == "FIRST_ONLY" and owner_character_id == first_id:
+            return [first_id, second_id]
+        if memory_sharing_mode == "SECOND_ONLY" and owner_character_id == second_id:
+            return [first_id, second_id]
+        return [owner_character_id]
 
     @staticmethod
     def _order_speakers(
@@ -290,6 +411,7 @@ class ConversationService:
             mode=snapshot.mode,
             status=snapshot.status,
             character_ids=snapshot.character_ids,
+            memory_sharing_mode=snapshot.memory_sharing_mode,
             created_at=snapshot.created_at,
             updated_at=snapshot.updated_at,
             closed_at=snapshot.closed_at,
