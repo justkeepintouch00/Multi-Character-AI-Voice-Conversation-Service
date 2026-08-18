@@ -3,12 +3,17 @@ import {
   createCharacter,
   createConversation,
   fetchSpeechAudio,
+  getProfile,
   listCharacters,
   sendTextMessage,
+  shareMemory,
   updateCharacter,
+  updateProfile,
   type CharacterApi,
+  type MemorySharingMode,
   type MessageApi,
   type SceneTurnApi,
+  type ShareSuggestionApi,
 } from './api'
 import './App.css'
 
@@ -934,9 +939,59 @@ function PushToTalkMic({ state, transcript, disabled, onToggle }: { state: MicSt
   </div>
 }
 
+type ConversationSetup = { displayName: string; sharingMode: MemorySharingMode }
+
+const SHARING_MODE_OPTIONS: { value: MemorySharingMode; describe: (a: string, b: string) => string }[] = [
+  { value: 'SHARED', describe: (a, b) => `${a}와 ${b}가 서로의 기억을 전부 공유해요` },
+  { value: 'FIRST_ONLY', describe: (a, b) => `${a}가 알게 된 것만 ${b}에게 공유돼요` },
+  { value: 'SECOND_ONLY', describe: (a, b) => `${b}가 알게 된 것만 ${a}에게 공유돼요` },
+  { value: 'NONE', describe: () => '서로 공유하지 않아요 (각자 따로 기억해요)' },
+]
+
+function ConversationSetupModal({ characters, initialName, onConfirm }: { characters: Character[]; initialName: string; onConfirm: (setup: ConversationSetup) => void }) {
+  const [name, setName] = useState(initialName)
+  const [sharingMode, setSharingMode] = useState<MemorySharingMode>('NONE')
+  const isDuo = characters.length > 1
+  const canConfirm = name.trim().length > 0
+  return <div className="setup-modal-backdrop">
+    <div className="setup-modal">
+      <h2>대화를 시작하기 전에</h2>
+      <label className="setup-field">
+        <span>당신을 뭐라고 부를까요?</span>
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="이름 또는 별명" autoFocus />
+      </label>
+      {isDuo && <div className="setup-field">
+        <span>{characters[0].name}와 {characters[1].name}가 서로의 기억을 공유할까요?</span>
+        <div className="setup-radio-group">
+          {SHARING_MODE_OPTIONS.map((option) => <label key={option.value} className={sharingMode === option.value ? 'selected' : ''}>
+            <input type="radio" name="sharing-mode" checked={sharingMode === option.value} onChange={() => setSharingMode(option.value)} />
+            {option.describe(characters[0].name, characters[1].name)}
+          </label>)}
+        </div>
+      </div>}
+      <button type="button" className="primary-button setup-confirm" disabled={!canConfirm} onClick={() => onConfirm({ displayName: name.trim(), sharingMode })}>대화 시작하기</button>
+    </div>
+  </div>
+}
+
+function ShareSuggestionBanner({ suggestion, characters, onDecide }: { suggestion: ShareSuggestionApi; characters: Character[]; onDecide: (approve: boolean) => void }) {
+  const from = characters.find((item) => item.id === suggestion.from_character_id)?.name ?? suggestion.from_character_id
+  const to = characters.find((item) => item.id === suggestion.to_character_id)?.name ?? suggestion.to_character_id
+  return <div className="share-suggestion-banner">
+    <div><strong>{from}가 {to}에게 방금 이런 이야기를 했어요</strong><p>“{suggestion.content_preview}”</p><small>{to}가 앞으로도 이 내용을 기억하게 할까요? 승인하지 않으면 이번 대화에서만 언급된 것으로 남아요.</small></div>
+    <div className="share-suggestion-actions">
+      <button type="button" className="outline-button" onClick={() => onDecide(false)}>이번만</button>
+      <button type="button" className="primary-button" onClick={() => onDecide(true)}>{to}에게도 기억하게 하기</button>
+    </div>
+  </div>
+}
+
 function CModeConversationRunner({ scenario, characters, onExit }: { scenario: Scenario; characters: Character[]; onExit: () => void }) {
   const primary = characters[0]
   const opening = scenario.opening ?? '마침 나도 마무리하려던 참이었어. 처음부터 말하려니 조금 어색할 수 있겠다. 말하기 힘들면 내 이야기만 들어도 괜찮아.'
+  const [setup, setSetup] = useState<ConversationSetup | null>(null)
+  const [profileName, setProfileName] = useState('')
+  const [shareSuggestions, setShareSuggestions] = useState<ShareSuggestionApi[]>([])
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [messages, setMessages] = useState<MessageApi[]>([{
     id: 'opening', speaker_type: 'CHARACTER', speaker_id: primary.id, content: opening, input_mode: 'SYSTEM',
@@ -977,8 +1032,22 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
   }
 
   useEffect(() => {
+    let active = true
+    getProfile()
+      .then((name) => { if (active) setProfileName(name) })
+      .catch(() => { /* 프로필을 못 불러와도 이름을 직접 입력하면 되므로 무시한다. */ })
+    return () => { active = false }
+  }, [])
+
+  useEffect(() => {
+    if (!setup) return
     if (!conversationRequest.current) {
-      conversationRequest.current = createConversation(characterIds, primary.id, opening)
+      conversationRequest.current = createConversation(
+        characterIds,
+        primary.id,
+        opening,
+        setup.sharingMode,
+      )
     }
     let active = true
     conversationRequest.current
@@ -995,7 +1064,7 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
       })
     return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [characterIdsKey])
+  }, [characterIdsKey, setup])
 
   const sendContent = async (rawValue: string) => {
     const content = rawValue.trim()
@@ -1007,10 +1076,22 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
       const exchange = await sendTextMessage(conversationId, content)
       setMessages((current) => [...current, exchange.user_message, ...exchange.assistant_messages])
       setStatus('ready')
+      if (exchange.share_suggestions.length > 0) {
+        setShareSuggestions((current) => [...current, ...exchange.share_suggestions])
+      }
       void playTurns(exchange.scene_plan.turns)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '메시지 전송에 실패했습니다.')
       setStatus('error')
+    }
+  }
+
+  const decideShareSuggestion = (suggestion: ShareSuggestionApi, approve: boolean) => {
+    setShareSuggestions((current) => current.filter((item) => item !== suggestion))
+    if (approve) {
+      void shareMemory(suggestion.memory_id, suggestion.to_character_id).catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : '기억 공유에 실패했습니다.')
+      })
     }
   }
 
@@ -1110,9 +1191,23 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
   const latestCharacterMessage = [...messages].reverse().find((message) => message.speaker_type === 'CHARACTER')
   const latestSpeaker = latestCharacterMessage?.speaker_id ? findCharacter(latestCharacterMessage.speaker_id) : primary
   const narrationNames = characters.map((item) => item.name).join(', ')
+
+  if (!setup) {
+    return <ConversationSetupModal
+      characters={characters}
+      initialName={profileName}
+      onConfirm={(value) => {
+        setProfileName(value.displayName)
+        void updateProfile(value.displayName).catch(() => { /* 대화는 이름 저장 실패와 무관하게 시작한다 */ })
+        setSetup(value)
+      }}
+    />
+  }
+
   return <div className="runner-page c-api-runner">
     <header className="runner-header"><button type="button" className="back-button" onClick={onExit}>←</button><div><ModeBadge mode="C" /><strong>{scenario.title}</strong><span className="documented-badge">실제 API 연결</span></div><div className="runner-progress"><span>{status === 'connecting' ? '연결 중' : status === 'thinking' ? '답변 생성 중' : '자유 대화'}</span></div><button type="button" className="outline-button" onClick={onExit}>나가기</button></header>
     <main className="scene-stage stage-c c-latest-turn"><div className="scene-people">{characters.map((item, index) => <div key={item.id} className={`scene-person person-${index}`}><PersonAvatar name={item.name} accent={item.accent} image={item.image} large /><span>{item.name}</span></div>)}</div><div className="scene-conversation-layer"><div className="scene-narration">대화를 시작하기 전, {narrationNames}가 사용자를 반긴다.</div><article className="live-caption-card"><PersonAvatar name={latestSpeaker.name} accent={latestSpeaker.accent} image={latestSpeaker.image} /><div><span>{latestSpeaker.name}</span><p>{status === 'thinking' ? '잠시 생각하고 있어…' : latestCharacterMessage?.content ?? opening}</p></div></article></div></main>
+    {shareSuggestions.length > 0 && <div className="share-suggestion-stack">{shareSuggestions.map((suggestion, index) => <ShareSuggestionBanner key={`${suggestion.memory_id}-${index}`} suggestion={suggestion} characters={characters} onDecide={(approve) => decideShareSuggestion(suggestion, approve)} />)}</div>}
     <aside className="interaction-dock"><div className="turn-guidance"><span>C 모드 · 버튼으로 말하기</span><strong>{status === 'thinking' ? `${latestSpeaker.name}가 답변을 생각하고 있어요.` : '평가 없이 자유롭게 이야기합니다.'}</strong></div><PushToTalkMic state={micState} transcript={transcript} disabled={status === 'thinking' || !conversationId} onToggle={toggleRecording} />{error && <div className="captured-answer"><span>연결 오류</span><p>{error}</p></div>}<div className="text-response"><form onSubmit={(event) => { event.preventDefault(); void sendContent(typed) }}><label><span>키보드 대체 입력</span><input value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="마이크를 사용할 수 없을 때 입력하세요" /></label><button type="submit" disabled={!typed.trim() || !conversationId || status === 'thinking'}>전송</button></form></div></aside>
     <audio ref={audioRef} hidden />
   </div>

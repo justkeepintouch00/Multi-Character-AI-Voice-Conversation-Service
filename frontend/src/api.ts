@@ -38,11 +38,21 @@ export type SceneTurnApi = {
   text: string
 }
 
+export type ShareSuggestionApi = {
+  memory_id: string
+  from_character_id: string
+  to_character_id: string
+  content_preview: string
+}
+
 export type MessageExchangeApi = {
   user_message: MessageApi
   assistant_messages: MessageApi[]
   scene_plan: { turns: SceneTurnApi[] }
+  share_suggestions: ShareSuggestionApi[]
 }
+
+export type MemorySharingMode = 'NONE' | 'SHARED' | 'FIRST_ONLY' | 'SECOND_ONLY'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -79,6 +89,7 @@ export function createConversation(
   characterIds: string[],
   openingSpeakerId: string,
   openingMessage: string,
+  memorySharingMode: MemorySharingMode = 'NONE',
 ): Promise<ConversationApi> {
   return request('/api/v1/conversations', {
     method: 'POST',
@@ -86,6 +97,7 @@ export function createConversation(
       mode: 'TALK',
       character_ids: characterIds,
       opening_message: { speaker_id: openingSpeakerId, content: openingMessage },
+      memory_sharing_mode: memorySharingMode,
     }),
   })
 }
@@ -98,6 +110,31 @@ export function sendTextMessage(
     method: 'POST',
     body: JSON.stringify({ content, input_mode: 'TEXT' }),
   })
+}
+
+export async function getProfile(): Promise<string> {
+  const response = await request<{ display_name: string }>('/api/v1/profile')
+  return response.display_name
+}
+
+export async function updateProfile(displayName: string): Promise<string> {
+  const response = await request<{ display_name: string }>('/api/v1/profile', {
+    method: 'PUT',
+    body: JSON.stringify({ display_name: displayName }),
+  })
+  return response.display_name
+}
+
+export async function shareMemory(memoryId: string, grantToCharacterId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/memories/${memoryId}/share`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ grant_to_character_id: grantToCharacterId, can_disclose_to: true }),
+  })
+  if (!response.ok) {
+    const body = await response.text()
+    throw new Error(`API ${response.status}: ${body}`)
+  }
 }
 
 export async function fetchSpeechAudio(
