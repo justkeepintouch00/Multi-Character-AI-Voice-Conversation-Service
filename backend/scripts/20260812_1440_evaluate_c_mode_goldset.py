@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -178,18 +179,33 @@ def score_response(case: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     }
 
 
-def request_scene(client: httpx.Client, case: dict[str, Any]) -> dict[str, Any]:
+def request_scene(
+    client: httpx.Client, case: dict[str, Any], *, max_attempts: int = 5
+) -> dict[str, Any]:
     character_ids = ["character_a"] if case["phase"] == "single" else ["character_a", "character_b"]
-    response = client.post(
-        "",
-        json={
-            "user_text": case["user_text"],
-            "character_ids": character_ids,
-            "recent_messages": recent_messages(case),
-        },
-    )
-    response.raise_for_status()
-    return response.json()
+    payload = {
+        "user_text": case["user_text"],
+        "character_ids": character_ids,
+        "recent_messages": recent_messages(case),
+    }
+    last_error: httpx.HTTPError | None = None
+    for attempt in range(1, max_attempts + 1):
+        response = client.post("", json=payload)
+        # The scene-plans route wraps every upstream Groq failure (429 rate
+        # limit included) as a generic 502, so we can't branch on the real
+        # status code here -- just back off and retry on any server error.
+        if response.status_code < 500:
+            response.raise_for_status()
+            return response.json()
+        last_error = httpx.HTTPStatusError(
+            f"upstream error {response.status_code}",
+            request=response.request,
+            response=response,
+        )
+        if attempt < max_attempts:
+            time.sleep(min(2**attempt, 20))
+    assert last_error is not None
+    raise last_error
 
 
 def main() -> int:
@@ -200,7 +216,9 @@ def main() -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     counts: Counter[str] = Counter()
 
-    with httpx.Client(base_url=args.api_url, timeout=args.timeout) as client, output.open("w", encoding="utf-8") as handle:
+    with httpx.Client(
+        base_url=args.api_url, timeout=args.timeout, follow_redirects=True
+    ) as client, output.open("w", encoding="utf-8") as handle:
         for case in cases:
             shape_problems = check_case_shape(case)
             result: dict[str, Any] = {
