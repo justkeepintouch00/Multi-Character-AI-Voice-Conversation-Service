@@ -28,6 +28,7 @@ from app.repositories.conversations import SQLAlchemyConversationRepository
 from app.repositories.memory import SQLAlchemyMemoryRepository
 from app.services.characters import CharacterService
 from app.services.conversations import ConversationService
+from app.services.memory import MemoryService
 
 
 def get_db_session() -> Generator[Session, None, None]:
@@ -89,3 +90,15 @@ def get_character_service(
         development_user_display_name=get_development_user_display_name(),
     )
     return CharacterService(repository)
+
+
+def get_memory_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> MemoryService:
+    character_repository = SQLAlchemyCharacterRepository(
+        session,
+        development_user_external_id=get_development_user_external_id(),
+        development_user_display_name=get_development_user_display_name(),
+    )
+    memory_repository = SQLAlchemyMemoryRepository(session)
+    return MemoryService(character_repository, memory_repository)

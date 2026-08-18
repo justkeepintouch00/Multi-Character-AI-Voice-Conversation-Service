@@ -32,6 +32,16 @@ class AccessDecision:
     reason_code: ReasonCode
 
 
+@dataclass(frozen=True, slots=True)
+class AccessLogEntry:
+    memory_id: UUID
+    requesting_character_instance_id: UUID
+    action: str
+    decision: Decision
+    reason_code: ReasonCode
+    created_at: datetime
+
+
 class MemoryRepository(Protocol):
     def retrieve(
         self,
@@ -80,6 +90,14 @@ class MemoryRepository(Protocol):
     def revoke_read_access(
         self, *, memory_id: UUID, subject_character_instance_id: UUID
     ) -> None: ...
+
+    def list_access_logs(
+        self,
+        *,
+        memory_id: UUID | None = None,
+        conversation_id: UUID | None = None,
+        limit: int = 50,
+    ) -> list[AccessLogEntry]: ...
 
 
 class SQLAlchemyMemoryRepository:
@@ -268,6 +286,35 @@ class SQLAlchemyMemoryRepository:
         if acl is not None and acl.can_read:
             acl.can_read = False
             self.session.commit()
+
+    def list_access_logs(
+        self,
+        *,
+        memory_id: UUID | None = None,
+        conversation_id: UUID | None = None,
+        limit: int = 50,
+    ) -> list[AccessLogEntry]:
+        query = (
+            select(MemoryAccessLog)
+            .order_by(MemoryAccessLog.created_at.desc())
+            .limit(limit)
+        )
+        if memory_id is not None:
+            query = query.where(MemoryAccessLog.memory_id == memory_id)
+        if conversation_id is not None:
+            query = query.where(MemoryAccessLog.conversation_id == conversation_id)
+        rows = self.session.execute(query).scalars().all()
+        return [
+            AccessLogEntry(
+                memory_id=row.memory_id,
+                requesting_character_instance_id=row.requesting_character_instance_id,
+                action=row.action,
+                decision=row.decision,
+                reason_code=row.reason_code,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ]
 
     def _evaluate(
         self,
