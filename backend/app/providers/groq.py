@@ -6,10 +6,8 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
-from app.domain.characters import DEVELOPMENT_CHARACTERS
 from app.providers.base import (
     ProviderConfigurationError,
-    ProviderInputError,
     ProviderRequestError,
     ProviderResponseError,
     ProviderTimeoutError,
@@ -17,10 +15,12 @@ from app.providers.base import (
     TranscriptionSegment,
 )
 from app.providers.scene_director import (
-    SCENE_DIRECTOR_INSTRUCTIONS,
-    scene_plan_schema,
+    PRIMARY_SPEAKER_INSTRUCTIONS,
+    SECONDARY_SPEAKER_INSTRUCTIONS,
+    primary_speaker_turn_schema,
+    secondary_speaker_turn_schema,
 )
-from app.schemas.scene_plan import ScenePlan, ScenePlanRequest
+from app.schemas.speaker_turn import SpeakerTurnRequest, SpeakerTurnResult
 
 
 # Groq currently guarantees strict JSON Schema output for these production models.
@@ -65,50 +65,45 @@ class GroqSceneDirector:
         self.max_attempts = min(max(max_attempts, 1), 3)
         self.transport = transport
 
-    async def create_scene_plan(self, request: ScenePlanRequest) -> ScenePlan:
-        if request.characters:
-            profiles = {character.id: character for character in request.characters}
-            if set(profiles) != set(request.character_ids):
-                raise ProviderInputError(
-                    "groq", "characters must match requested character_ids"
-                )
-        else:
-            unknown_ids = set(request.character_ids) - set(DEVELOPMENT_CHARACTERS)
-            if unknown_ids:
-                raise ProviderInputError("groq", "Unknown character_id")
-            profiles = {
-                character_id: {
-                    "id": character_id,
-                    "name": DEVELOPMENT_CHARACTERS[character_id].name,
-                    "concept": DEVELOPMENT_CHARACTERS[character_id].concept,
-                    "persona": DEVELOPMENT_CHARACTERS[character_id].persona,
-                    "traits": list(DEVELOPMENT_CHARACTERS[character_id].traits),
-                    "speech_style": "",
-                    "relationship_style": "",
-                }
-                for character_id in request.character_ids
-            }
+    async def create_speaker_turn(
+        self, request: SpeakerTurnRequest
+    ) -> SpeakerTurnResult:
         if not self.api_key:
             raise ProviderConfigurationError("groq", "GROQ_API_KEY is not configured")
 
-        schema = scene_plan_schema(request.character_ids)
+        other_participant_ids = [
+            character.id for character in request.other_participants
+        ]
+        if request.role == "PRIMARY":
+            instructions = PRIMARY_SPEAKER_INSTRUCTIONS
+            schema = primary_speaker_turn_schema(
+                request.speaker.id, other_participant_ids
+            )
+            schema_name = "primary_speaker_turn"
+        else:
+            instructions = SECONDARY_SPEAKER_INSTRUCTIONS
+            schema = secondary_speaker_turn_schema(
+                request.speaker.id, other_participant_ids
+            )
+            schema_name = "secondary_speaker_turn"
+
         input_payload = {
             "user_text": request.user_text,
-            "characters": [
-                (
-                    profiles[character_id].model_dump(mode="json")
-                    if hasattr(profiles[character_id], "model_dump")
-                    else profiles[character_id]
-                )
-                for character_id in request.character_ids
+            "speaker": request.speaker.model_dump(mode="json"),
+            "other_participants": [
+                character.model_dump(mode="json")
+                for character in request.other_participants
             ],
             "recent_messages": [
                 message.model_dump(mode="json") for message in request.recent_messages
             ],
+            "memory_context": [
+                item.model_dump(mode="json") for item in request.memory_context
+            ],
             "required_output_schema": schema,
         }
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": SCENE_DIRECTOR_INSTRUCTIONS},
+            {"role": "system", "content": instructions},
             {
                 "role": "user",
                 "content": json.dumps(input_payload, ensure_ascii=False),
@@ -119,7 +114,7 @@ class GroqSceneDirector:
             response_format = {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "scene_plan",
+                    "name": schema_name,
                     "strict": True,
                     "schema": schema,
                 },
@@ -134,15 +129,15 @@ class GroqSceneDirector:
                 "messages": messages,
                 "response_format": response_format,
                 "temperature": 0.2,
-                "max_completion_tokens": 1200,
+                "max_completion_tokens": 600,
                 "stream": False,
             }
             response_payload = await self._request(payload)
             try:
                 output_text = _extract_chat_content(response_payload)
-                plan = ScenePlan.model_validate_json(output_text)
-                plan.validate_speakers(set(request.character_ids))
-                return plan
+                turn = SpeakerTurnResult.model_validate_json(output_text)
+                turn.validate_speaker(request.speaker.id)
+                return turn
             except (json.JSONDecodeError, ValidationError, ValueError) as exc:
                 last_validation_error = exc
                 if attempt < self.max_attempts:
@@ -157,7 +152,7 @@ class GroqSceneDirector:
                     )
 
         raise ProviderResponseError(
-            "groq", "Scene Director returned an invalid scene plan"
+            "groq", "Scene Director returned an invalid speaker turn"
         ) from last_validation_error
 
     async def _request(self, payload: dict[str, Any]) -> dict[str, Any]:

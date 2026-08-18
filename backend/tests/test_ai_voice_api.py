@@ -16,7 +16,7 @@ from app.providers.base import (
     ProviderConfigurationError,
     TranscriptionResult,
 )
-from app.schemas.scene_plan import ScenePlan, ScenePlanRequest
+from app.schemas.speaker_turn import SpeakerTurnRequest, SpeakerTurnResult
 from app.schemas.speech import SpeechRequest
 
 
@@ -24,21 +24,14 @@ client = TestClient(app)
 
 
 class FakeSceneDirector:
-    async def create_scene_plan(self, request: ScenePlanRequest) -> ScenePlan:
-        return ScenePlan.model_validate(
-            {
-                "scene_action": "CHARACTER_SEQUENCE",
-                "turns": [
-                    {
-                        "speaker_id": request.character_ids[0],
-                        "to": "USER",
-                        "emotion": "concern",
-                        "text": "많이 지쳤겠네. 천천히 말해도 괜찮아.",
-                    }
-                ],
-                "return_turn_to": "USER",
-                "max_internal_turns": 1,
-            }
+    async def create_speaker_turn(
+        self, request: SpeakerTurnRequest
+    ) -> SpeakerTurnResult:
+        return SpeakerTurnResult(
+            speaker_id=request.speaker.id,
+            to="USER",
+            emotion="concern",
+            text="많이 지쳤겠네. 천천히 말해도 괜찮아.",
         )
 
 
@@ -69,7 +62,9 @@ class FakeTTS:
 
 
 class NotConfiguredSceneDirector:
-    async def create_scene_plan(self, request: ScenePlanRequest) -> ScenePlan:
+    async def create_speaker_turn(
+        self, request: SpeakerTurnRequest
+    ) -> SpeakerTurnResult:
         del request
         raise ProviderConfigurationError("groq", "GROQ_API_KEY is not configured")
 
@@ -81,28 +76,42 @@ def reset_dependency_overrides():
     app.dependency_overrides = {}
 
 
-def test_create_scene_plan() -> None:
+def test_create_speaker_turn() -> None:
     app.dependency_overrides[get_scene_director_provider] = FakeSceneDirector
 
     response = client.post(
-        "/api/v1/scene-plans",
+        "/api/v1/speaker-turns",
         json={
+            "role": "PRIMARY",
             "user_text": "오늘 회사에서 힘든 일이 있었어.",
-            "character_ids": ["character_a", "character_b"],
+            "speaker": {
+                "id": "character_a",
+                "name": "루미",
+                "concept": "사용자의 말을 차분하게 듣는 캐릭터입니다.",
+            },
         },
     )
 
     assert response.status_code == 200
-    assert response.json()["turns"][0]["speaker_id"] == "character_a"
-    assert response.json()["return_turn_to"] == "USER"
+    assert response.json()["speaker_id"] == "character_a"
+    assert response.json()["to"] == "USER"
 
 
-def test_scene_plan_rejects_more_than_two_characters() -> None:
+def test_speaker_turn_rejects_more_than_one_other_participant() -> None:
     response = client.post(
-        "/api/v1/scene-plans",
+        "/api/v1/speaker-turns",
         json={
+            "role": "PRIMARY",
             "user_text": "안녕",
-            "character_ids": ["character_a", "character_b", "character_c"],
+            "speaker": {
+                "id": "character_a",
+                "name": "루미",
+                "concept": "사용자의 말을 차분하게 듣는 캐릭터입니다.",
+            },
+            "other_participants": [
+                {"id": "character_b", "name": "하루", "concept": "다른 관점을 말하는 캐릭터입니다."},
+                {"id": "character_c", "name": "새벽", "concept": "세 번째 캐릭터입니다."},
+            ],
         },
     )
 
@@ -115,8 +124,16 @@ def test_missing_provider_configuration_returns_503() -> None:
     )
 
     response = client.post(
-        "/api/v1/scene-plans",
-        json={"user_text": "안녕", "character_ids": ["character_a"]},
+        "/api/v1/speaker-turns",
+        json={
+            "role": "PRIMARY",
+            "user_text": "안녕",
+            "speaker": {
+                "id": "character_a",
+                "name": "루미",
+                "concept": "사용자의 말을 차분하게 듣는 캐릭터입니다.",
+            },
+        },
     )
 
     assert response.status_code == 503

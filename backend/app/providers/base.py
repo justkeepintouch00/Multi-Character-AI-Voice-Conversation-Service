@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.schemas.scene_plan import ScenePlan, ScenePlanRequest
+from app.schemas.speaker_turn import SpeakerTurnRequest, SpeakerTurnResult
 from app.schemas.speech import SpeechRequest
 
 
@@ -70,7 +70,9 @@ class AudioStream:
 
 
 class SceneDirectorProvider(Protocol):
-    async def create_scene_plan(self, request: ScenePlanRequest) -> ScenePlan: ...
+    async def create_speaker_turn(
+        self, request: SpeakerTurnRequest
+    ) -> SpeakerTurnResult: ...
 
 
 class STTProvider(Protocol):
