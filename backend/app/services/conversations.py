@@ -251,6 +251,13 @@ class ConversationService:
         if len(named_ids) == 1:
             first_id = named_ids[0]
         else:
+            # No character was named explicitly, so default to whoever spoke
+            # last continuing the exchange -- the user's next line is far
+            # more often a reply/objection to that character than a cue to
+            # switch speakers. Forcing alternation here misroutes exactly
+            # that case (e.g. "방금 A가 한 말에는 동의가 안 돼" landing on B
+            # instead of A). Variety across turns is handled separately by
+            # needs_second_speaker, not by flipping the primary responder.
             last_speaker_id = next(
                 (
                     message.speaker_id
@@ -260,15 +267,7 @@ class ConversationService:
                 ),
                 None,
             )
-            if last_speaker_id is not None:
-                others = [
-                    character_id
-                    for character_id in character_ids
-                    if character_id != last_speaker_id
-                ]
-                first_id = others[0] if others else character_ids[0]
-            else:
-                first_id = character_ids[0]
+            first_id = last_speaker_id if last_speaker_id is not None else character_ids[0]
 
         second_id = next(
             character_id for character_id in character_ids if character_id != first_id

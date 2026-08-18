@@ -244,7 +244,7 @@ def test_reject_unknown_character_before_database_write() -> None:
         )
 
 
-def test_message_generates_single_turn_from_the_character_who_did_not_speak_last() -> None:
+def test_message_generates_single_turn_from_whoever_spoke_last() -> None:
     repository = FakeRepository()
     scene_director = FakeSceneDirector()
     memory_repository = FakeMemoryRepository(memories_by_viewer={})
@@ -260,15 +260,19 @@ def test_message_generates_single_turn_from_the_character_who_did_not_speak_last
     assert repository.saved_user_message is not None
     assert repository.saved_plan is not None
     assert len(repository.saved_plan.turns) == 1
-    # character_b spoke last in recent_messages, so character_a takes this turn.
-    assert result.assistant_messages[0].speaker_id == "character_a"
+    # character_b spoke last in recent_messages. Without an explicit name in
+    # user_text, the user's next line is presumptively a reply to whoever
+    # they were just talking to, so character_b continues -- forcing
+    # alternation here would misroute direct replies/objections to the
+    # other character (see the C_MULTI_004 eval finding).
+    assert result.assistant_messages[0].speaker_id == "character_b"
     assert len(scene_director.requests) == 1
     assert scene_director.requests[0].role == "PRIMARY"
-    assert scene_director.requests[0].speaker.id == "character_a"
+    assert scene_director.requests[0].speaker.id == "character_b"
     assert len(memory_repository.requested_viewers) == 1
     assert (
         memory_repository.requested_viewers[0]
-        == repository.character_instance_ids["character_a"]
+        == repository.character_instance_ids["character_b"]
     )
 
 
@@ -309,23 +313,25 @@ def test_second_speaker_gets_an_independent_call_with_only_their_own_memory() ->
     )
 
     assert len(repository.saved_plan.turns) == 2
-    assert result.assistant_messages[0].speaker_id == "character_a"
-    assert result.assistant_messages[1].speaker_id == "character_b"
+    # character_b spoke last, so it takes the primary turn (see
+    # _order_speakers); character_a is the secondary speaker here.
+    assert result.assistant_messages[0].speaker_id == "character_b"
+    assert result.assistant_messages[1].speaker_id == "character_a"
     assert [request.role for request in scene_director.requests] == [
         "PRIMARY",
         "SECONDARY",
     ]
     # Each speaker's own memory lookup only, never the other speaker's.
-    assert memory_repository.requested_viewers == [character_a_id, character_b_id]
+    assert memory_repository.requested_viewers == [character_b_id, character_a_id]
 
     primary_request, secondary_request = scene_director.requests
     primary_contents = {item.content for item in primary_request.memory_context}
     secondary_contents = {item.content for item in secondary_request.memory_context}
-    assert primary_contents == {"A만 아는 비공개 면접 고민"}
-    assert secondary_contents == {"B만 아는 비공개 반려동물 이야기"}
+    assert primary_contents == {"B만 아는 비공개 반려동물 이야기"}
+    assert secondary_contents == {"A만 아는 비공개 면접 고민"}
     # A's private memory never crosses into B's request, and vice versa.
-    assert "A만 아는 비공개 면접 고민" not in secondary_contents
-    assert "B만 아는 비공개 반려동물 이야기" not in primary_contents
+    assert "A만 아는 비공개 면접 고민" not in primary_contents
+    assert "B만 아는 비공개 반려동물 이야기" not in secondary_contents
     # The secondary call only sees the already-spoken (public) primary turn,
     # folded into recent_messages, not a copy of A's private memory context.
     assert secondary_request.recent_messages[-1].content == (
