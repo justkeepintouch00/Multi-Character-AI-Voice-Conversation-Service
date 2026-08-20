@@ -29,6 +29,7 @@ SUPPORTED_AUDIO_TYPES = {
     "/transcriptions",
     response_model=TranscriptionResponse,
     response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     summary="녹음 파일을 텍스트로 변환",
 )
 async def create_transcription(
@@ -82,4 +83,10 @@ async def create_transcription(
         language=result.language,
         duration_seconds=result.duration_seconds,
         segments=segments,
+        model=result.model,
+        fallback_used=result.fallback_used,
+        fallback_reason=result.fallback_reason,
+        primary_model=result.primary_model,
+        primary_text=result.primary_text,
+        primary_avg_logprob=result.primary_avg_logprob,
     )

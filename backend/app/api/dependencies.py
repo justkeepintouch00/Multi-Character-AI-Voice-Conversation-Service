@@ -11,6 +11,8 @@ from app.config import (
     get_groq_base_url,
     get_groq_scene_max_attempts,
     get_groq_scene_model,
+    get_groq_transcription_fallback_avg_logprob_threshold,
+    get_groq_transcription_fallback_model,
     get_groq_transcription_model,
     get_typecast_api_key,
     get_typecast_base_url,
@@ -21,8 +23,12 @@ from app.db.session import SessionLocal
 from app.providers.base import SceneDirectorProvider, STTProvider, TTSProvider
 from app.providers.groq import GroqSceneDirector, GroqTranscriptionProvider
 from app.providers.typecast import TypecastTTSProvider
+from app.repositories.characters import SQLAlchemyCharacterRepository
 from app.repositories.conversations import SQLAlchemyConversationRepository
+from app.repositories.memory import SQLAlchemyMemoryRepository
+from app.services.characters import CharacterService
 from app.services.conversations import ConversationService
+from app.services.memory import MemoryService
 
 
 def get_db_session() -> Generator[Session, None, None]:
@@ -44,6 +50,10 @@ def get_stt_provider() -> STTProvider:
         api_key=get_groq_api_key(),
         base_url=get_groq_base_url(),
         model=get_groq_transcription_model(),
+        fallback_model=get_groq_transcription_fallback_model(),
+        fallback_avg_logprob_threshold=(
+            get_groq_transcription_fallback_avg_logprob_threshold()
+        ),
     )
 
 
@@ -67,4 +77,28 @@ def get_conversation_service(
         development_user_external_id=get_development_user_external_id(),
         development_user_display_name=get_development_user_display_name(),
     )
-    return ConversationService(repository, scene_director)
+    memory_repository = SQLAlchemyMemoryRepository(session)
+    return ConversationService(repository, scene_director, memory_repository)
+
+
+def get_character_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> CharacterService:
+    repository = SQLAlchemyCharacterRepository(
+        session,
+        development_user_external_id=get_development_user_external_id(),
+        development_user_display_name=get_development_user_display_name(),
+    )
+    return CharacterService(repository)
+
+
+def get_memory_service(
+    session: Annotated[Session, Depends(get_db_session)],
+) -> MemoryService:
+    character_repository = SQLAlchemyCharacterRepository(
+        session,
+        development_user_external_id=get_development_user_external_id(),
+        development_user_display_name=get_development_user_display_name(),
+    )
+    memory_repository = SQLAlchemyMemoryRepository(session)
+    return MemoryService(character_repository, memory_repository)

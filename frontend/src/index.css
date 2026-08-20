@@ -7,8 +7,8 @@
   -webkit-font-smoothing: antialiased;
 }
 * { box-sizing: border-box; }
-html { background: #f5f6f9; }
-body { margin: 0; min-width: 320px; min-height: 100vh; }
+html { overflow-y: scroll; scrollbar-gutter: stable; background: #f5f6f9; }
+body { margin: 0; min-width: 320px; min-height: 100vh; overflow-x: hidden; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid rgba(109, 92, 231, .22); outline-offset: 2px; }

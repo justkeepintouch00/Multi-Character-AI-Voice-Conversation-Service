@@ -43,9 +43,27 @@ class MessageListResponse(BaseModel):
     items: list[MessageRead]
 
 
+class ShareSuggestion(BaseModel):
+    """A character voiced another character's private memory out loud.
+
+    This never changes DB access on its own -- speaking something aloud in
+    one turn doesn't grant permanent read access. It's surfaced so the user
+    can explicitly approve turning it into a real ACL grant via
+    POST /api/v1/memories/{memory_id}/share.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    memory_id: UUID
+    from_character_id: str
+    to_character_id: str
+    content_preview: str
+
+
 class MessageExchangeResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     user_message: MessageRead
     scene_plan: ScenePlan
     assistant_messages: list[MessageRead]
+    share_suggestions: list[ShareSuggestion] = Field(default_factory=list)

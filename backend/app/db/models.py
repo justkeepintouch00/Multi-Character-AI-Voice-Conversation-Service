@@ -359,6 +359,10 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "status IN ('ACTIVE', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'ARCHIVED')",
             name="status_values",
         ),
+        CheckConstraint(
+            "memory_sharing_mode IN ('NONE', 'SHARED', 'FIRST_ONLY', 'SECOND_ONLY')",
+            name="memory_sharing_mode_values",
+        ),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -370,6 +374,12 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(
         String(16), default="ACTIVE", server_default="ACTIVE", nullable=False
+    )
+    # Only meaningful when the conversation has 2 participants; governs the
+    # default ACL for memories auto-extracted from this conversation's
+    # messages (see ConversationService._maybe_store_extracted_memory).
+    memory_sharing_mode: Mapped[str] = mapped_column(
+        String(16), default="NONE", server_default="NONE", nullable=False
     )
     closed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -672,6 +682,41 @@ class MemorySource(Base):
     )
 
 
+class MemoryAccessLog(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "memory_access_logs"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('RETRIEVE', 'DISCLOSE', 'SHARE')", name="action_values"
+        ),
+        CheckConstraint("decision IN ('ALLOW', 'DENY')", name="decision_values"),
+        CheckConstraint(
+            "reason_code IN ('OWNER', 'ACL', 'NO_PERMISSION', 'DELETED', 'EXPIRED')",
+            name="reason_code_values",
+        ),
+        Index(
+            "ix_memory_access_logs_memory_requester",
+            "memory_id",
+            "requesting_character_instance_id",
+        ),
+    )
+
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    memory_id: Mapped[UUID] = mapped_column(
+        ForeignKey("memory_items.id", ondelete="CASCADE"), index=True
+    )
+    requesting_character_instance_id: Mapped[UUID] = mapped_column(
+        ForeignKey("character_instances.id", ondelete="CASCADE"), index=True
+    )
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    decision: Mapped[str] = mapped_column(String(8), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(24), nullable=False)
+    scene_plan_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("scene_plans.id", ondelete="SET NULL"), nullable=True
+    )
+
+
 class ScenarioRun(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "scenario_runs"
     __table_args__ = (
@@ -744,6 +789,7 @@ __all__ = [
     "Job",
     "JobCheckpoint",
     "MemoryACL",
+    "MemoryAccessLog",
     "MemoryItem",
     "MemorySource",
     "Message",
