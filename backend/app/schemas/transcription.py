@@ -20,3 +20,9 @@ class TranscriptionResponse(BaseModel):
     language: str = Field(min_length=2, max_length=10)
     duration_seconds: float | None = Field(default=None, ge=0)
     segments: list[TranscriptionSegmentResponse] | None = None
+    model: str | None = None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    primary_model: str | None = None
+    primary_text: str | None = None
+    primary_avg_logprob: float | None = None

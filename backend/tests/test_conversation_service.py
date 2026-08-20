@@ -13,6 +13,7 @@ from app.repositories.conversations import (
 from app.schemas.conversation import ConversationCreate
 from app.schemas.message import MessageCreate, MessageRead
 from app.schemas.scene_plan import RecentMessage, ScenePlan, ScenePlanRequest
+from app.schemas.scene_plan import SceneCharacter
 from app.services.conversations import ConversationService
 from app.services.errors import InvalidResourceInputError, ResourceConflictError
 
@@ -33,15 +34,36 @@ class FakeRepository:
                 "character_a": uuid4(),
                 "character_b": uuid4(),
             },
+            character_profiles={
+                "character_a": SceneCharacter(
+                    id="character_a",
+                    name="루미",
+                    concept="사용자의 말을 차분하게 듣고 맥락을 기억하는 대화 캐릭터입니다.",
+                    persona="차분하게 반응한다.",
+                    traits=["차분한"],
+                ),
+                "character_b": SceneCharacter(
+                    id="character_b",
+                    name="하루",
+                    concept="앞 캐릭터의 말을 듣고 다른 관점을 자연스럽게 이어가는 캐릭터입니다.",
+                    persona="솔직하고 자연스럽게 말한다.",
+                    traits=["솔직한"],
+                ),
+            },
         )
 
     def ensure_development_context(self) -> DevelopmentContext:
         return self.context
 
     def create_conversation(
-        self, context: DevelopmentContext, mode: str, character_ids: list[str]
+        self,
+        context: DevelopmentContext,
+        mode: str,
+        character_ids: list[str],
+        opening_message=None,
     ) -> ConversationSnapshot:
         assert context == self.context
+        del opening_message
         return self._snapshot(mode=mode, character_ids=character_ids)
 
     def get_conversation(
@@ -210,6 +232,7 @@ def test_message_is_saved_then_scene_result_is_created() -> None:
     assert result.assistant_messages[0].speaker_id == "character_a"
     assert len(scene_director.last_request.recent_messages) == 1
     assert scene_director.last_request.recent_messages[0].role == "CHARACTER"
+    assert scene_director.last_request.characters[0].name == "루미"
 
 
 def test_completed_conversation_rejects_new_message() -> None:
