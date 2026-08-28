@@ -74,6 +74,7 @@ class SQLAlchemyGraphMemoryRepository:
         summary: str | None = None,
     ) -> None:
         edge = MemoryGraphEdge(
+            created_at=datetime.now(timezone.utc),
             user_id=user_id,
             memory_id=memory_id,
             source_entity=source_entity.strip(),
