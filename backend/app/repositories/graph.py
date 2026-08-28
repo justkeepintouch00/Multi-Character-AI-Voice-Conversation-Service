@@ -120,6 +120,13 @@ class SQLAlchemyGraphMemoryRepository:
                 )
                 .where(
                     MemoryGraphEdge.user_id == user_id,
+                    # Keep graph facts within the current conversation;
+                    # ACL alone does not prevent cross-conversation leakage.
+                    or_(
+                        conversation_id is None,
+                        MemoryItem.source_conversation_id == conversation_id,
+                        MemoryItem.source_conversation_id.is_(None),
+                    ),
                     MemoryItem.deleted_at.is_(None),
                     or_(MemoryItem.expires_at.is_(None), MemoryItem.expires_at > now),
                     MemoryACL.can_read.is_(True),

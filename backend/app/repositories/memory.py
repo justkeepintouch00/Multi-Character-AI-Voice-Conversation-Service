@@ -133,6 +133,15 @@ class SQLAlchemyMemoryRepository:
                 )
                 .where(
                     MemoryItem.user_id == user_id,
+                    # Restrict retrieval to this conversation plus explicit
+                    # character seed memories (source_conversation_id IS NULL).
+                    # ACL alone is insufficient because it would expose
+                    # memories from unrelated past conversations.
+                    or_(
+                        conversation_id is None,
+                        MemoryItem.source_conversation_id == conversation_id,
+                        MemoryItem.source_conversation_id.is_(None),
+                    ),
                     MemoryItem.deleted_at.is_(None),
                     or_(
                         MemoryItem.expires_at.is_(None),

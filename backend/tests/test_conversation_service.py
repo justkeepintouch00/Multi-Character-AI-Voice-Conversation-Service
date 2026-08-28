@@ -114,6 +114,8 @@ class FakeRepository:
         assert conversation_id == self.conversation_id
         assert limit == 12
         return [
+            # A prior user turn makes this fixture a subsequent turn.
+            RecentMessage(role="USER", speaker_id=None, content="이전 대화 내용"),
             RecentMessage(
                 role="CHARACTER",
                 speaker_id="character_b",

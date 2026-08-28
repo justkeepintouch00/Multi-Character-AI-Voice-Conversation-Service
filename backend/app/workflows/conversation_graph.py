@@ -199,6 +199,11 @@ class ConversationWorkflow:
 
     async def _retrieve_primary_context(self, state: ConversationGraphState) -> dict:
         async def work() -> dict:
+            # The first user turn has only the scenario opening message.
+            # Skip long-term retrieval so unrelated history cannot enter
+            # the initial scene.
+            if not any(message.role == "USER" for message in state.get("recent_messages", [])):
+                return {"primary_records": [], "primary_memory_context": []}
             selection = state["selection"]
             records, memory_context = self.service._retrieve_turn_context(
                 context=state["context"],
@@ -285,6 +290,8 @@ class ConversationWorkflow:
 
     async def _retrieve_secondary_context(self, state: ConversationGraphState) -> dict:
         async def work() -> dict:
+            if not any(message.role == "USER" for message in state.get("recent_messages", [])):
+                return {"secondary_records": [], "secondary_memory_context": []}
             selection = state["selection"]
             records, memory_context = self.service._retrieve_turn_context(
                 context=state["context"],
