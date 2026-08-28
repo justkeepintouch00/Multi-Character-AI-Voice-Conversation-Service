@@ -1201,6 +1201,10 @@ function CModeConversationRunner({ scenario, characters, onExit }: { scenario: S
     for (const turn of turns) {
       try {
         const speaker = findCharacter(turn.speaker_id)
+        if (!speaker.typecastVoiceId) {
+          setTtsMessage(`${speaker.name}의 Typecast 음성이 설정되지 않았습니다. 캐릭터 설정에서 음성을 선택하면 재생됩니다.`)
+          continue
+        }
         const blob = await fetchSpeechAudio(turn.speaker_id, turn.text, turn.emotion, speaker.typecastVoiceId)
         const url = URL.createObjectURL(blob)
         await new Promise<void>((resolve) => {

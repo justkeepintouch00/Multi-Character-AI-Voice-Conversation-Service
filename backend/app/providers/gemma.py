@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import httpx
@@ -46,17 +47,41 @@ def _extract_error_metadata(
 
 
 def _extract_chat_content(payload: dict[str, Any]) -> str:
-    try:
-        content = payload["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise ProviderResponseError(
-            PROVIDER_NAME, "Gemma Scene Director returned no text output"
-        ) from exc
-    if not isinstance(content, str) or not content.strip():
-        raise ProviderResponseError(
-            PROVIDER_NAME, "Gemma Scene Director returned empty output"
-        )
-    return content.strip()
+    """Extract a usable assistant string from OpenAI/llama.cpp responses."""
+    choices = payload.get("choices")
+    candidates: list[Any] = []
+    if isinstance(choices, list) and choices:
+        choice = choices[0]
+        if isinstance(choice, dict):
+            message = choice.get("message")
+            if isinstance(message, dict):
+                candidates.extend([message.get("content"), message.get("text"), message.get("reasoning_content")])
+            candidates.append(choice.get("text"))
+    candidates.extend([payload.get("text"), payload.get("content")])
+    for candidate in candidates:
+        if isinstance(candidate, str) and candidate.strip():
+            return candidate.strip()
+    raise ProviderResponseError(PROVIDER_NAME, "Gemma Scene Director returned empty output")
+
+
+def _single_speaker_text(text: str, *, speaker_name: str, other_names: list[str]) -> str:
+    """Keep only the requested speaker when a local model emits labeled turns."""
+    cleaned = re.sub(r"\x60\x60\x60(?:json)?|\x60\x60\x60", "", text, flags=re.IGNORECASE).strip()
+    names = [name.strip() for name in [speaker_name, *other_names] if name.strip()]
+    if not names:
+        return cleaned
+    label_pattern = "|".join(re.escape(name) for name in names)
+    matches = list(re.finditer(rf"(?<!\S)({label_pattern})\s*[:：]", cleaned))
+    if not matches:
+        return cleaned
+    for index, match in enumerate(matches):
+        if match.group(1) != speaker_name:
+            continue
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(cleaned)
+        segment = cleaned[match.end() : end].strip(" \t\r\n-—")
+        if segment:
+            return segment
+    raise ValueError("Gemma output contains no turn for the requested speaker")
 
 
 def _extract_json_object(content: str) -> dict[str, Any]:
@@ -228,13 +253,14 @@ class GemmaSceneDirector:
 
         last_validation_error: Exception | None = None
         for attempt in range(1, self.max_attempts + 1):
+            output_text = ""
             response_payload = await self._request(
                 {
                     "model": self.model,
                     "messages": messages,
                     "temperature": 0.2,
                     "top_p": 0.95,
-                    "max_tokens": 600,
+                    "max_tokens": 220,
                     "response_format": {"type": "json_object"},
                     "stream": True,
                 }
@@ -247,23 +273,29 @@ class GemmaSceneDirector:
                     request=request,
                     other_participant_ids=other_participant_ids,
                 )
+                output_payload["text"] = _single_speaker_text(
+                    output_payload["text"],
+                    speaker_name=request.speaker.name,
+                    other_names=[item.name for item in request.other_participants],
+                )[:1000]
                 turn = SpeakerTurnResult.model_validate(output_payload)
                 turn.validate_speaker(request.speaker.id)
                 return turn
-            except (json.JSONDecodeError, ValidationError, ValueError) as exc:
+            except (ProviderResponseError, json.JSONDecodeError, ValidationError, ValueError) as exc:
                 last_validation_error = exc
                 if attempt < self.max_attempts:
-                    messages.append(
-                        {
-                            "role": "assistant",
-                            "content": output_text,
-                        }
-                    )
+                    if output_text:
+                        messages.append(
+                            {
+                                "role": "assistant",
+                                "content": output_text,
+                            }
+                        )
                     messages.append(
                         {
                             "role": "user",
                             "content": (
-                                "직전 출력이 required_output_schema 검증에 실패했다. "
+                                "직전 출력이 없거나 required_output_schema 검증에 실패했다. "
                                 "설명과 마크다운 없이 스키마에 맞는 JSON 객체만 "
                                 "다시 출력하라."
                             ),
@@ -343,6 +375,7 @@ class GemmaSceneDirector:
             return payload
 
         content_parts: list[str] = []
+        reasoning_parts: list[str] = []
         for line in response.text.splitlines():
             if not line.startswith("data:"):
                 continue
@@ -361,6 +394,13 @@ class GemmaSceneDirector:
             delta = choice.get("delta")
             message = choice.get("message")
             part = delta if isinstance(delta, dict) else message
-            if isinstance(part, dict) and isinstance(part.get("content"), str):
-                content_parts.append(part["content"])
-        return {"choices": [{"message": {"content": "".join(content_parts)}}]}
+            if isinstance(part, dict):
+                for key in ("content", "text"):
+                    value = part.get(key)
+                    if isinstance(value, str):
+                        content_parts.append(value)
+                value = part.get("reasoning_content")
+                if isinstance(value, str):
+                    reasoning_parts.append(value)
+        visible = "".join(content_parts)
+        return {"choices": [{"message": {"content": visible or "".join(reasoning_parts)}}]}
