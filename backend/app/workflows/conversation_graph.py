@@ -58,15 +58,23 @@ class ConversationWorkflow:
         builder.add_edge(START, "select_speakers")
         builder.add_conditional_edges(
             "select_speakers",
-            self._has_primary_speaker,
-            {"primary": "retrieve_primary_context", "empty": "finalize"},
+            self._primary_route,
+            {
+                "primary": "retrieve_primary_context",
+                "primary_without_memory": "generate_primary",
+                "empty": "finalize",
+            },
         )
         builder.add_edge("retrieve_primary_context", "generate_primary")
         builder.add_edge("generate_primary", "store_primary_memory")
         builder.add_conditional_edges(
             "store_primary_memory",
-            self._needs_secondary_speaker,
-            {"secondary": "retrieve_secondary_context", "finalize": "finalize"},
+            self._secondary_route,
+            {
+                "secondary": "retrieve_secondary_context",
+                "secondary_without_memory": "generate_secondary",
+                "finalize": "finalize",
+            },
         )
         builder.add_edge("retrieve_secondary_context", "generate_secondary")
         builder.add_edge("generate_secondary", "store_secondary_memory")
@@ -93,6 +101,10 @@ class ConversationWorkflow:
                 "user_text": user_text,
                 "recent_messages": recent_messages,
                 "turns": [],
+                "primary_records": [],
+                "primary_memory_context": [],
+                "secondary_records": [],
+                "secondary_memory_context": [],
                 "share_suggestions": [],
             }
         )
@@ -117,6 +129,10 @@ class ConversationWorkflow:
             "user_text": user_text,
             "recent_messages": recent_messages,
             "turns": [],
+            "primary_records": [],
+            "primary_memory_context": [],
+            "secondary_records": [],
+            "secondary_memory_context": [],
             "share_suggestions": [],
             "observation": RuntimeObservation(trace_id=get_trace_id()).to_dict(),
         }
@@ -194,16 +210,17 @@ class ConversationWorkflow:
 
         return await self._timed("select_speakers", work)
 
-    def _has_primary_speaker(self, state: ConversationGraphState) -> Literal["primary", "empty"]:
-        return "primary" if state.get("selection") else "empty"
+    def _primary_route(
+        self, state: ConversationGraphState
+    ) -> Literal["primary", "primary_without_memory", "empty"]:
+        if not state.get("selection"):
+            return "empty"
+        if not any(message.role == "USER" for message in state.get("recent_messages", [])):
+            return "primary_without_memory"
+        return "primary"
 
     async def _retrieve_primary_context(self, state: ConversationGraphState) -> dict:
         async def work() -> dict:
-            # The first user turn has only the scenario opening message.
-            # Skip long-term retrieval so unrelated history cannot enter
-            # the initial scene.
-            if not any(message.role == "USER" for message in state.get("recent_messages", [])):
-                return {"primary_records": [], "primary_memory_context": []}
             selection = state["selection"]
             records, memory_context = self.service._retrieve_turn_context(
                 context=state["context"],
@@ -278,20 +295,21 @@ class ConversationWorkflow:
 
         return await self._timed("store_primary_memory", work)
 
-    def _needs_secondary_speaker(
+    def _secondary_route(
         self, state: ConversationGraphState
-    ) -> Literal["secondary", "finalize"]:
+    ) -> Literal["secondary", "secondary_without_memory", "finalize"]:
         selection = state["selection"]
-        if selection.second_id and (
-            selection.force_second or state["primary_result"].needs_second_speaker
+        if not (
+            selection.second_id
+            and (selection.force_second or state["primary_result"].needs_second_speaker)
         ):
-            return "secondary"
-        return "finalize"
+            return "finalize"
+        if not any(message.role == "USER" for message in state.get("recent_messages", [])):
+            return "secondary_without_memory"
+        return "secondary"
 
     async def _retrieve_secondary_context(self, state: ConversationGraphState) -> dict:
         async def work() -> dict:
-            if not any(message.role == "USER" for message in state.get("recent_messages", [])):
-                return {"secondary_records": [], "secondary_memory_context": []}
             selection = state["selection"]
             records, memory_context = self.service._retrieve_turn_context(
                 context=state["context"],
