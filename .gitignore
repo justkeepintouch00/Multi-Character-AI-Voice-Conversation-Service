@@ -8,3 +8,5 @@ backend/test_outputs/
 backend/evals/runs/
 /share/
 /frontend/share/
+backend/logs/
+backend/uploads/

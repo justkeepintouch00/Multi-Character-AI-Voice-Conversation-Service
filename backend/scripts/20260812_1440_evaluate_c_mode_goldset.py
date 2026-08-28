@@ -20,7 +20,7 @@ import httpx
 
 
 DEFAULT_GOLDSET = Path(__file__).resolve().parents[1] / "evals" / "20260812_1424_C_MODE_GOLDSET.jsonl"
-DEFAULT_API_URL = "http://127.0.0.1:8000/api/v1/scene-plans"
+DEFAULT_API_URL = "http://127.0.0.1:8000/api/v1/conversations"
 
 GENERIC_CLOSING_PATTERNS = (
     "언제든 편하게 이야기하고 싶으실 때 말씀해",
@@ -56,9 +56,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--goldset", type=Path, default=DEFAULT_GOLDSET)
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--provider-label", default="groq")
+    parser.add_argument("--model-label", default="openai-gpt-oss-120b")
     parser.add_argument("--dry-run", action="store_true", help="Validate cases without API calls")
     parser.add_argument("--timeout", type=float, default=60.0)
+    parser.add_argument(
+        "--retry-rate-limit",
+        action="store_true",
+        help="Retry HTTP 429 only when Retry-After is present and at most 60 seconds",
+    )
+    parser.add_argument(
+        "--capture-observability",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Store server metrics before and after each case in the result JSONL.",
+    )
     return parser.parse_args()
+
+
+def safe_filename_label(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9._-]+", "-", value).strip("-") or "unknown"
 
 
 def load_cases(path: Path) -> list[dict[str, Any]]:
@@ -81,20 +98,6 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
     return cases
 
 
-def recent_messages(case: dict[str, Any]) -> list[dict[str, Any]]:
-    normalized: list[dict[str, Any]] = []
-    for message in case.get("history", []):
-        role = message.get("role", "USER")
-        normalized.append(
-            {
-                "role": role if role in {"USER", "CHARACTER"} else "USER",
-                "speaker_id": message.get("speaker_id"),
-                "content": str(message["content"]),
-            }
-        )
-    return normalized
-
-
 def check_case_shape(case: dict[str, Any]) -> list[str]:
     problems: list[str] = []
     if not str(case["user_text"]).strip():
@@ -107,7 +110,8 @@ def check_case_shape(case: dict[str, Any]) -> list[str]:
 
 
 def score_response(case: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    turns = payload.get("turns", []) if isinstance(payload, dict) else []
+    scene_plan = payload.get("scene_plan", {}) if isinstance(payload, dict) else {}
+    turns = scene_plan.get("turns", []) if isinstance(scene_plan, dict) else []
     texts = [str(turn.get("text", "")) for turn in turns if isinstance(turn, dict)]
     speakers = [str(turn.get("speaker_id", "")) for turn in turns if isinstance(turn, dict)]
     combined = " ".join(texts)
@@ -179,21 +183,31 @@ def score_response(case: dict[str, Any], payload: dict[str, Any]) -> dict[str, A
     }
 
 
-def request_scene(
-    client: httpx.Client, case: dict[str, Any], *, max_attempts: int = 5
+def post_with_retry(
+    client: httpx.Client,
+    path: str,
+    body: dict[str, Any],
+    *,
+    max_attempts: int = 5,
+    retry_rate_limit: bool = False,
 ) -> dict[str, Any]:
-    character_ids = ["character_a"] if case["phase"] == "single" else ["character_a", "character_b"]
-    payload = {
-        "user_text": case["user_text"],
-        "character_ids": character_ids,
-        "recent_messages": recent_messages(case),
-    }
     last_error: httpx.HTTPError | None = None
     for attempt in range(1, max_attempts + 1):
-        response = client.post("", json=payload)
-        # The scene-plans route wraps every upstream Groq failure (429 rate
-        # limit included) as a generic 502, so we can't branch on the real
-        # status code here -- just back off and retry on any server error.
+        response = client.post(path, json=body)
+        if response.status_code == 429:
+            retry_after = response.headers.get("retry-after")
+            if not retry_rate_limit or retry_after is None:
+                response.raise_for_status()
+            try:
+                delay_seconds = float(retry_after)
+            except (TypeError, ValueError):
+                response.raise_for_status()
+            if delay_seconds < 0 or delay_seconds > 60:
+                response.raise_for_status()
+            if attempt < max_attempts:
+                time.sleep(delay_seconds)
+                continue
+            response.raise_for_status()
         if response.status_code < 500:
             response.raise_for_status()
             return response.json()
@@ -208,11 +222,136 @@ def request_scene(
     raise last_error
 
 
+def api_root(api_url: str) -> str:
+    marker = "/conversations"
+    if marker not in api_url:
+        raise ValueError("api_url must end with /api/v1/conversations")
+    return api_url.rsplit(marker, 1)[0]
+
+
+def get_observability_snapshot(client: httpx.Client) -> dict[str, Any] | None:
+    try:
+        response = client.get(f"{api_root(str(client.base_url))}/observability/metrics")
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, dict) else None
+    except (httpx.HTTPError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _counter_values(snapshot: dict[str, Any] | None) -> dict[tuple[str, tuple[tuple[str, str], ...]], float]:
+    values: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
+    for item in (snapshot or {}).get("counters", []):
+        if not isinstance(item, dict):
+            continue
+        name, labels, value = item.get("name"), item.get("labels", {}), item.get("value")
+        if isinstance(name, str) and isinstance(labels, dict) and isinstance(value, (int, float)):
+            values[(name, tuple(sorted((str(k), str(v)) for k, v in labels.items())))] = float(value)
+    return values
+
+
+def observability_delta(before: dict[str, Any] | None, after: dict[str, Any] | None) -> dict[str, Any] | None:
+    if before is None or after is None:
+        return None
+    previous, current = _counter_values(before), _counter_values(after)
+    counters = [
+        {"name": name, "labels": dict(labels), "value": round(value - previous.get((name, labels), 0), 6)}
+        for (name, labels), value in current.items()
+        if value - previous.get((name, labels), 0) != 0
+    ]
+    return {"counter_delta": sorted(counters, key=lambda item: (item["name"], sorted(item["labels"].items())))}
+
+
+def create_seed_memories(client: httpx.Client, case: dict[str, Any], *, max_attempts: int, retry_rate_limit: bool) -> list[str]:
+    raw_memories = case.get("seed_memories", [])
+    if not isinstance(raw_memories, list):
+        raise ValueError("seed_memories must be a JSON array")
+    created_ids: list[str] = []
+    for memory in raw_memories:
+        if not isinstance(memory, dict):
+            raise ValueError("seed_memories items must be objects")
+        response = post_with_retry(client, f"{api_root(str(client.base_url))}/memories", memory, max_attempts=max_attempts, retry_rate_limit=retry_rate_limit)
+        memory_id = response.get("id")
+        if not isinstance(memory_id, str):
+            raise ValueError("memory create response has no id")
+        created_ids.append(memory_id)
+    return created_ids
+
+
+def delete_seed_memories(client: httpx.Client, memory_ids: list[str]) -> None:
+    for memory_id in memory_ids:
+        try:
+            client.delete(f"{api_root(str(client.base_url))}/memories/{memory_id}").raise_for_status()
+        except httpx.HTTPError:
+            continue
+
+
+def normalize_setup_messages(case: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = case.get("setup_messages", case.get("history", []))
+    if raw in (None, ""):
+        return []
+    if not isinstance(raw, list):
+        raise ValueError("setup_messages/history must be a JSON array")
+    return raw
+
+def request_scene(client: httpx.Client, case: dict[str, Any], *, max_attempts: int = 5, retry_rate_limit: bool = False) -> tuple[dict[str, Any], list[str]]:
+    """Replay public setup messages and then run one scored user turn.
+
+    A CHARACTER setup message can be the first message only (opening_message).
+    USER setup messages go through the actual service, generating genuine public
+    conversation history. Private facts must be passed through seed_memories.
+    """
+    configured_ids = case.get("character_ids")
+    character_ids = [str(item) for item in configured_ids] if isinstance(configured_ids, list) and configured_ids else (["character_a"] if case["phase"] == "single" else ["character_a", "character_b"])
+    setup_messages = normalize_setup_messages(case)
+    opening_message: dict[str, Any] | None = None
+    if setup_messages and setup_messages[0].get("role") == "CHARACTER":
+        opening_message = {"speaker_id": setup_messages[0].get("speaker_id") or character_ids[0], "content": str(setup_messages[0].get("content", ""))}
+        setup_messages = setup_messages[1:]
+    if any(entry.get("role") != "USER" for entry in setup_messages):
+        raise ValueError("setup_messages supports one initial CHARACTER opening and then USER messages only")
+    create_payload: dict[str, Any] = {"mode": "TALK", "character_ids": character_ids}
+    if opening_message:
+        create_payload["opening_message"] = opening_message
+    conversation = post_with_retry(client, "", create_payload, max_attempts=max_attempts, retry_rate_limit=retry_rate_limit)
+    conversation_id = conversation["id"]
+    created_memory_ids = create_seed_memories(client, case, max_attempts=max_attempts, retry_rate_limit=retry_rate_limit)
+    try:
+        for entry in setup_messages:
+            post_with_retry(client, f"/{conversation_id}/messages", {"content": str(entry.get("content", "")), "input_mode": "TEXT"}, max_attempts=max_attempts, retry_rate_limit=retry_rate_limit)
+        payload = post_with_retry(client, f"/{conversation_id}/messages", {"content": case["user_text"], "input_mode": "TEXT"}, max_attempts=max_attempts, retry_rate_limit=retry_rate_limit)
+        return payload, created_memory_ids
+    except Exception:
+        delete_seed_memories(client, created_memory_ids)
+        raise
+def http_error_details(exc: httpx.HTTPError) -> dict[str, Any]:
+    details: dict[str, Any] = {"error": str(exc)}
+    if isinstance(exc, httpx.HTTPStatusError):
+        response = exc.response
+        details["http_status"] = response.status_code
+        retry_after = response.headers.get("retry-after")
+        if retry_after is not None:
+            details["retry_after"] = retry_after
+        try:
+            details["upstream_error"] = response.json()
+        except json.JSONDecodeError:
+            details["upstream_error"] = response.text[:2000]
+    return details
+
+
+
 def main() -> int:
     args = parse_args()
     cases = load_cases(args.goldset)
     timestamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
-    output = args.output or Path(__file__).resolve().parents[1] / "evals" / "runs" / f"{timestamp}_c_mode_results.jsonl"
+    provider_label = safe_filename_label(args.provider_label)
+    model_label = safe_filename_label(args.model_label)
+    output = args.output or (
+        Path(__file__).resolve().parents[1]
+        / "evals"
+        / "runs"
+        / f"{timestamp}_c_mode_{provider_label}_{model_label}_results.jsonl"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     counts: Counter[str] = Counter()
 
@@ -220,11 +359,20 @@ def main() -> int:
         base_url=args.api_url, timeout=args.timeout, follow_redirects=True
     ) as client, output.open("w", encoding="utf-8") as handle:
         for case in cases:
+            case_started = time.perf_counter()
+            abort_after_case = False
             shape_problems = check_case_shape(case)
             result: dict[str, Any] = {
                 "case_id": case["case_id"],
                 "phase": case["phase"],
+                "provider": args.provider_label,
+                "model": args.model_label,
                 "user_text": case["user_text"],
+                "goldset": {
+                    key: value
+                    for key, value in case.items()
+                    if key not in {"case_id", "phase", "user_text"}
+                },
                 "evaluated_at": datetime.now(timezone.utc).isoformat(),
                 "request_status": "dry_run" if args.dry_run else "pending",
             }
@@ -236,17 +384,50 @@ def main() -> int:
                 counts["dry_run"] += 1
             else:
                 try:
-                    payload = request_scene(client, case)
+                    before_snapshot = get_observability_snapshot(client) if args.capture_observability else None
+                    payload, seed_memory_ids = request_scene(client, case, retry_rate_limit=args.retry_rate_limit)
+                    after_snapshot = get_observability_snapshot(client) if args.capture_observability else None
                     result.update({"request_status": "ok", "scene_plan": payload})
                     result["evaluation"] = score_response(case, payload)
+                    if args.capture_observability:
+                        result["observability"] = {"before": before_snapshot, "after": after_snapshot, "delta": observability_delta(before_snapshot, after_snapshot)}
+                    delete_seed_memories(client, seed_memory_ids)
                     counts["ok"] += 1
-                except (httpx.HTTPError, ValueError) as exc:
+                except httpx.HTTPError as exc:
+                    result.update(http_error_details(exc))
+                    status_code = result.get("http_status")
+                    if status_code == 429:
+                        result["request_status"] = "rate_limited"
+                        counts["rate_limited"] += 1
+                        abort_after_case = True
+                    else:
+                        result["request_status"] = "error"
+                        counts["error"] += 1
+                except ValueError as exc:
                     result.update({"request_status": "error", "error": str(exc)})
                     counts["error"] += 1
+            result["completed_at"] = datetime.now(timezone.utc).isoformat()
+            result["duration_ms"] = round((time.perf_counter() - case_started) * 1000)
             handle.write(json.dumps(result, ensure_ascii=False) + "\n")
+            handle.flush()
+            if abort_after_case:
+                break
 
-    print(json.dumps({"output": str(output), "cases": len(cases), "counts": counts}, ensure_ascii=False))
-    return 0 if counts["error"] == 0 and counts["invalid_case"] == 0 else 1
+    print(
+        json.dumps(
+            {
+                "output": str(output),
+                "provider": args.provider_label,
+                "model": args.model_label,
+                "cases": len(cases),
+                "processed": sum(counts.values()),
+                "counts": counts,
+                "aborted": counts["rate_limited"] > 0,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0 if counts["error"] == 0 and counts["invalid_case"] == 0 and counts["rate_limited"] == 0 else 1
 
 
 if __name__ == "__main__":

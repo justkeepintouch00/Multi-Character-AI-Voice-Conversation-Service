@@ -12,6 +12,9 @@ CHARACTER = CharacterRead(
     version=2,
     name="루미",
     nickname=None,
+    age=24,
+    occupation="시계 공방 주인",
+    gender="female",
     concept="오래된 골목의 시계 공방에서 일하며 상대의 말을 차분하게 듣고 이전 대화의 구체적인 내용을 오래 기억하는 동반자 캐릭터다.",
     persona="일상적인 대화에서는 과도한 상담 문구 없이 자연스럽고 짧게 반응한다.",
     traits=["차분한", "섬세한"],
@@ -59,11 +62,17 @@ def test_list_characters() -> None:
 
 
 def test_update_character_creates_new_version_contract() -> None:
-    payload = CHARACTER.model_dump(exclude={"id", "version"})
+    payload = CHARACTER.model_dump(exclude={"id", "version", "image_url"})
+    payload["age"] = 25
+    payload["occupation"] = "시계 공방 운영자"
+    payload["gender"] = "female"
     payload["persona"] = "과장된 위로 대신 사용자의 일상 표현에 자연스럽고 구체적으로 반응한다."
 
     response = client.put("/api/v1/characters/character_a", json=payload)
 
     assert response.status_code == 200
     assert response.json()["version"] == 3
+    assert response.json()["age"] == 25
+    assert response.json()["occupation"] == "시계 공방 운영자"
+    assert response.json()["gender"] == "female"
     assert response.json()["persona"] == payload["persona"]

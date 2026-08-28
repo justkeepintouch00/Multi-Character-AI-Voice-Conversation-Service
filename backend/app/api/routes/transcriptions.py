@@ -1,8 +1,11 @@
+import logging
+from time import perf_counter
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from app.api.dependencies import get_stt_provider
+from app.observability import METRICS, log_event
 from app.providers.base import STTProvider
 from app.schemas.transcription import (
     TranscriptionResponse,
@@ -57,11 +60,57 @@ async def create_transcription(
             detail="오디오 파일은 20MB 이하여야 합니다.",
         )
 
-    result = await provider.transcribe(
-        filename=file.filename or "recording.webm",
-        content=content,
-        content_type=content_type,
-        language=language.lower(),
+    provider_name = getattr(provider, "provider_name", "groq")
+    started = perf_counter()
+    try:
+        result = await provider.transcribe(
+            filename=file.filename or "recording.webm",
+            content=content,
+            content_type=content_type,
+            language=language.lower(),
+        )
+    except Exception as exc:
+        duration_ms = (perf_counter() - started) * 1000
+        METRICS.increment(
+            "stt_requests_total", provider=provider_name, status="failed"
+        )
+        METRICS.observe(
+            "stt_request_duration_ms",
+            duration_ms,
+            provider=provider_name,
+            status="failed",
+        )
+        log_event(
+            "stt_request_failed",
+            level=logging.ERROR,
+            provider=provider_name,
+            duration_ms=round(duration_ms, 3),
+            error_type=type(exc).__name__,
+        )
+        raise
+    duration_ms = (perf_counter() - started) * 1000
+    METRICS.increment(
+        "stt_requests_total", provider=provider_name, status="success"
+    )
+    METRICS.observe(
+        "stt_request_duration_ms",
+        duration_ms,
+        provider=provider_name,
+        status="success",
+    )
+    if result.fallback_used:
+        METRICS.increment(
+            "fallback_total",
+            component="stt",
+            reason=result.fallback_reason or "unknown",
+        )
+    log_event(
+        "stt_request_completed",
+        provider=provider_name,
+        model=result.model or "unknown",
+        duration_ms=round(duration_ms, 3),
+        fallback_used=result.fallback_used,
+        fallback_reason=result.fallback_reason,
     )
     segments = (
         [

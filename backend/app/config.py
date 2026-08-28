@@ -40,6 +40,17 @@ def get_development_user_display_name() -> str:
     return os.getenv("DEV_USER_DISPLAY_NAME", "개발 사용자")
 
 
+def get_scene_director_provider_name() -> str:
+    configured = os.getenv("SCENE_DIRECTOR_PROVIDER", "").strip().lower()
+    value = configured or "groq"
+    aliases = {
+        "gemma": "gemma4_e2b",
+        "gemma4": "gemma4_e2b",
+        "gemma_4_e2b": "gemma4_e2b",
+    }
+    return aliases.get(value, value)
+
+
 def get_groq_api_key() -> str | None:
     value = os.getenv("GROQ_API_KEY", "").strip()
     return value or None
@@ -60,6 +71,37 @@ def get_groq_scene_max_attempts() -> int:
     except ValueError:
         return 2
     return min(max(value, 1), 3)
+
+
+def get_gemma_api_key() -> str | None:
+    value = os.getenv("GEMMA_API_KEY", "").strip()
+    return value or None
+
+
+def get_gemma_base_url() -> str:
+    return os.getenv("GEMMA_BASE_URL", "http://127.0.0.1:9379/v1").rstrip("/")
+
+
+def get_gemma_scene_model() -> str:
+    return os.getenv("GEMMA_SCENE_MODEL", "gemma4-e2b")
+
+
+def get_gemma_scene_max_attempts() -> int:
+    raw_value = os.getenv("GEMMA_SCENE_MAX_ATTEMPTS", "2")
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return 2
+    return min(max(value, 1), 3)
+
+
+def get_gemma_scene_timeout_seconds() -> float:
+    raw_value = os.getenv("GEMMA_SCENE_TIMEOUT_SECONDS", "180")
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return 180.0
+    return max(value, 1.0)
 
 
 def get_groq_transcription_model() -> str:

@@ -35,3 +35,12 @@ class CharacterService:
         if character is None:
             raise ResourceNotFoundError("캐릭터를 찾을 수 없습니다.")
         return character
+    def upload_portrait(
+        self, character_id: str, *, content: bytes, mime_type: str
+    ) -> CharacterRead:
+        character = self.repository.upload_portrait(
+            character_id, content=content, mime_type=mime_type
+        )
+        if character is None:
+            raise ResourceNotFoundError("캐릭터를 찾을 수 없습니다.")
+        return character

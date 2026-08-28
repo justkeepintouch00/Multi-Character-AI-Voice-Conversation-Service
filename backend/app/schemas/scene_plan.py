@@ -31,8 +31,12 @@ class SceneCharacter(BaseModel):
 
     id: str = Field(min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=100)
+    age: int | None = Field(default=None, ge=1, le=999)
+    age_group: str = Field(default="", max_length=40)
+    occupation: str = Field(default="", max_length=100)
+    gender: str = Field(default="unspecified", max_length=16)
     concept: str = Field(min_length=1, max_length=200)
-    persona: str = Field(default="", max_length=2000)
+    persona: str = Field(default="", max_length=2600)
     traits: list[str] = Field(default_factory=list, max_length=4)
     speech_style: str = Field(default="", max_length=100)
     relationship_style: str = Field(default="", max_length=100)

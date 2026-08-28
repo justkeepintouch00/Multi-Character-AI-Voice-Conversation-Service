@@ -25,6 +25,7 @@ EXPECTED_TABLES = {
     "memory_items",
     "memory_acl",
     "memory_sources",
+    "memory_graph_edges",
     "memory_access_logs",
     "scenarios",
     "scenario_characters",

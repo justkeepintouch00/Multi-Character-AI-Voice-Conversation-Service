@@ -303,6 +303,41 @@ def test_message_generates_single_turn_from_whoever_spoke_last() -> None:
     )
 
 
+def test_message_stream_emits_privacy_safe_workflow_events() -> None:
+    repository = FakeRepository()
+    service = ConversationService(
+        repository, FakeSceneDirector(), FakeMemoryRepository(memories_by_viewer={})
+    )
+
+    async def collect() -> list[dict]:
+        return [
+            event
+            async for event in service.create_message_stream(
+                repository.conversation_id,
+                MessageCreate(content="스트리밍 진행 상태를 확인하고 싶어."),
+            )
+        ]
+
+    events = asyncio.run(collect())
+    event_names = [event["event"] for event in events]
+    assert event_names[0] == "message_accepted"
+    assert "workflow_started" in event_names
+    assert "node_completed" in event_names
+    assert event_names[-1] == "workflow_completed"
+    node_names = {
+        event["node"] for event in events if event["event"] == "node_completed"
+    }
+    assert "retrieve_primary_context" in node_names
+    final_event = events[-1]
+    assert final_event["exchange"]["scene_plan"]["turns"]
+    assert "retrieved_memory_ids" in final_event["observation"]
+    assert all(
+        "content" not in event.get("details", {})
+        for event in events
+        if event["event"] == "node_completed"
+    )
+
+
 def test_second_speaker_gets_an_independent_call_with_only_their_own_memory() -> None:
     repository = FakeRepository()
     scene_director = FakeSceneDirector(second_speaker_needed=True)
@@ -474,3 +509,70 @@ def test_disclosed_memory_surfaces_as_a_share_suggestion_without_changing_acl() 
     assert suggestion.to_character_id == "character_a"
     # Speaking it aloud is not itself a grant -- no ACL call happened.
     assert memory_repository.created_memories == []
+
+
+def test_explicit_a_and_b_request_forces_two_turns() -> None:
+    repository = FakeRepository()
+    scene_director = FakeSceneDirector()
+    service = ConversationService(
+        repository, scene_director, FakeMemoryRepository(memories_by_viewer={})
+    )
+
+    result = asyncio.run(
+        service.create_message(
+            repository.conversation_id,
+            MessageCreate(content="A랑 B 둘 다 인사해. 앞으로 우리 셋은 친구야."),
+        )
+    )
+
+    assert [turn.speaker_id for turn in result.scene_plan.turns] == [
+        "character_b",
+        "character_a",
+    ]
+    assert [request.role for request in scene_director.requests] == ["PRIMARY", "SECONDARY"]
+    assert scene_director.requests[0].turn_instruction is not None
+
+
+def test_correction_after_a_spoke_acknowledges_then_routes_to_b() -> None:
+    repository = FakeRepository()
+    # The test fixture records character_b as the usual previous speaker.
+    # For this correction case, create the exact public history of A speaking.
+    repository.recent_messages = lambda conversation_id, limit=12: [
+        RecentMessage(role="CHARACTER", speaker_id="character_a", content="내 생각을 먼저 말할게."),
+        RecentMessage(role="USER", speaker_id=None, content=repository.saved_user_message.content),
+    ]
+    scene_director = FakeSceneDirector()
+    service = ConversationService(
+        repository, scene_director, FakeMemoryRepository(memories_by_viewer={})
+    )
+
+    result = asyncio.run(
+        service.create_message(
+            repository.conversation_id,
+            MessageCreate(content="A가 아니라 B가 말하라고."),
+        )
+    )
+
+    assert [turn.speaker_id for turn in result.scene_plan.turns] == [
+        "character_a",
+        "character_b",
+    ]
+    assert scene_director.requests[0].turn_instruction is not None
+    assert scene_director.requests[1].turn_instruction is not None
+
+
+def test_correction_without_a_previous_turn_routes_directly_to_b() -> None:
+    repository = FakeRepository()
+    scene_director = FakeSceneDirector()
+    service = ConversationService(
+        repository, scene_director, FakeMemoryRepository(memories_by_viewer={})
+    )
+
+    result = asyncio.run(
+        service.create_message(
+            repository.conversation_id,
+            MessageCreate(content="A가 아니라 B가 말하라고."),
+        )
+    )
+
+    assert [turn.speaker_id for turn in result.scene_plan.turns] == ["character_b"]

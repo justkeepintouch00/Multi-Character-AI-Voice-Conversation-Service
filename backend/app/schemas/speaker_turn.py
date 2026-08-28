@@ -23,6 +23,18 @@ class MemoryContextItem(BaseModel):
     sensitivity: str = Field(min_length=1, max_length=16)
 
 
+class MemoryGraphRelation(BaseModel):
+    """One optional, user-grounded relation edge extracted with a memory."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    has_relation: bool = False
+    source_entity: str = Field(default="", max_length=160)
+    relation: str = Field(default="", max_length=80)
+    target_entity: str = Field(default="", max_length=160)
+    summary: str = Field(default="", max_length=300)
+
+
 class ExtractedMemory(BaseModel):
     """A candidate long-term fact the speaker noticed in this turn.
 
@@ -36,6 +48,7 @@ class ExtractedMemory(BaseModel):
     has_memory: bool
     content: str = Field(default="", max_length=500)
     sensitivity: Literal["PUBLIC", "PERSONAL", "PRIVATE", "HIGH"] = "PERSONAL"
+    graph_relation: MemoryGraphRelation = Field(default_factory=MemoryGraphRelation)
 
 
 class SpeakerTurnRequest(BaseModel):
@@ -59,6 +72,10 @@ class SpeakerTurnRequest(BaseModel):
     memory_context: list[MemoryContextItem] = Field(
         default_factory=list, max_length=20
     )
+    # Service-level routing facts are passed separately from the user's text.
+    # This lets the provider distinguish an explicit dual-speaker request
+    # without exposing any private memory.
+    turn_instruction: str | None = Field(default=None, max_length=500)
 
 
 class SpeakerTurnResult(BaseModel):

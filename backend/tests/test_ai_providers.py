@@ -128,11 +128,18 @@ def test_groq_scene_director_retries_invalid_llama_output() -> None:
     assert request_count == 2
 
 
-def test_groq_scene_director_uses_strict_schema_for_supported_model() -> None:
+def test_groq_scene_director_uses_flat_strict_schema_for_gpt_oss() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
-        assert payload["response_format"]["type"] == "json_schema"
-        assert payload["response_format"]["json_schema"]["strict"] is True
+        response_format = payload["response_format"]
+        assert response_format["type"] == "json_schema"
+        schema = response_format["json_schema"]
+        assert schema["strict"] is True
+        assert schema["schema"]["additionalProperties"] is False
+        assert set(schema["schema"]["required"]) == {
+            "speaker_id", "to", "emotion", "text",
+            "needs_second_speaker", "second_speaker_reason",
+        }
         return httpx.Response(
             200,
             json={
@@ -175,9 +182,7 @@ def test_groq_scene_director_second_speaker_ignores_own_decision_fields() -> Non
         payload = json.loads(request.content)
         schema = payload["messages"][1]["content"]
         body = json.loads(schema)
-        assert "needs_second_speaker" not in body["required_output_schema"][
-            "properties"
-        ]
+        assert "needs_second_speaker" not in body["output_contract"]["required_keys"]
         return httpx.Response(
             200,
             json={
@@ -404,3 +409,4 @@ def test_typecast_tts_stream_maps_domain_emotion() -> None:
         return b"".join([chunk async for chunk in audio.chunks])
 
     assert asyncio.run(run_test()) == b"streamed-audio"
+

@@ -1,7 +1,9 @@
+import json
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.api.dependencies import get_conversation_service
 from app.schemas.conversation import ConversationCreate, ConversationRead
@@ -64,6 +66,42 @@ async def create_message(
     service: Annotated[ConversationService, Depends(get_conversation_service)],
 ) -> MessageExchangeResponse:
     return await service.create_message(conversation_id, request)
+
+
+@router.post(
+    "/{conversation_id}/messages/stream",
+    summary="사용자 메시지 저장 및 LangGraph 진행 이벤트 스트리밍",
+    response_class=StreamingResponse,
+)
+async def create_message_stream(
+    conversation_id: UUID,
+    request: MessageCreate,
+    service: Annotated[ConversationService, Depends(get_conversation_service)],
+) -> StreamingResponse:
+    async def event_stream():
+        try:
+            async for event in service.create_message_stream(conversation_id, request):
+                event_name = str(event.get("event", "message"))
+                payload = json.dumps(event, ensure_ascii=False, default=str)
+                yield f"event: {event_name}\ndata: {payload}\n\n"
+        except Exception:
+            # HTTP headers have already been sent once streaming starts. Keep
+            # the client protocol stable and avoid exposing provider details.
+            payload = json.dumps(
+                {"event": "error", "status": "failed", "message": "응답 생성에 실패했습니다."},
+                ensure_ascii=False,
+            )
+            yield f"event: error\ndata: {payload}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get(

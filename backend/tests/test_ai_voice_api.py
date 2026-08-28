@@ -14,6 +14,7 @@ from app.main import app
 from app.providers.base import (
     AudioStream,
     ProviderConfigurationError,
+    ProviderRequestError,
     TranscriptionResult,
 )
 from app.schemas.speaker_turn import SpeakerTurnRequest, SpeakerTurnResult
@@ -138,6 +139,42 @@ def test_missing_provider_configuration_returns_503() -> None:
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "PROVIDER_NOT_CONFIGURED"
+
+
+def test_provider_rate_limit_remains_429() -> None:
+    class RateLimitedSceneDirector:
+        async def create_speaker_turn(
+            self, request: SpeakerTurnRequest
+        ) -> SpeakerTurnResult:
+            del request
+            raise ProviderRequestError(
+                "groq",
+                "Scene Director upstream returned HTTP 429: quota exhausted",
+                status_code=429,
+                error_code="rate_limit_exceeded",
+                retry_after="60",
+            )
+
+    app.dependency_overrides[get_scene_director_provider] = (
+        RateLimitedSceneDirector
+    )
+    response = client.post(
+        "/api/v1/speaker-turns",
+        json={
+            "role": "PRIMARY",
+            "user_text": "rate limit test",
+            "speaker": {
+                "id": "character_a",
+                "name": "test character",
+                "concept": "test character concept",
+            },
+        },
+    )
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "60"
+    assert response.json()["error"]["code"] == "rate_limit_exceeded"
+    assert response.json()["error"]["upstream_status"] == 429
 
 
 def test_create_transcription() -> None:

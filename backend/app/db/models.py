@@ -92,12 +92,25 @@ class CharacterVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "char_length(concept_prompt) BETWEEN 50 AND 200",
             name="concept_prompt_length",
         ),
+        CheckConstraint(
+            "gender IN ('male', 'female', 'unspecified')",
+            name="character_version_gender_values",
+        ),
     )
 
     template_id: Mapped[UUID] = mapped_column(
         ForeignKey("character_templates.id", ondelete="CASCADE"), index=True
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Age belongs to a character version. Updating it creates a new version
+    # row instead of overwriting the existing profile record.
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    occupation: Mapped[str] = mapped_column(
+        String(100), default="", server_default=text("''"), nullable=False
+    )
+    gender: Mapped[str] = mapped_column(
+        String(16), default="unspecified", server_default="unspecified", nullable=False
+    )
     concept_prompt: Mapped[str] = mapped_column(String(200), nullable=False)
     traits_json: Mapped[dict] = mapped_column(
         JSONB, default=dict, server_default=EMPTY_JSON, nullable=False
@@ -109,6 +122,9 @@ class CharacterVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         JSONB, default=dict, server_default=EMPTY_JSON, nullable=False
     )
     additional_prompt: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    additional_character_prompt: Mapped[str] = mapped_column(
+        Text, default="", server_default="", nullable=False
+    )
 
 
 class VoiceProfile(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -680,6 +696,29 @@ class MemorySource(Base):
     message_id: Mapped[UUID] = mapped_column(
         ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
     )
+
+
+class MemoryGraphEdge(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "memory_graph_edges"
+    __table_args__ = (
+        UniqueConstraint("memory_id", "source_entity", "relation", "target_entity"),
+        CheckConstraint("length(trim(source_entity)) > 0", name="nonempty_source_entity"),
+        CheckConstraint("length(trim(relation)) > 0", name="nonempty_relation"),
+        CheckConstraint("length(trim(target_entity)) > 0", name="nonempty_target_entity"),
+        Index("ix_memory_graph_edges_user_source", "user_id", "source_entity"),
+        Index("ix_memory_graph_edges_user_target", "user_id", "target_entity"),
+    )
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    memory_id: Mapped[UUID] = mapped_column(
+        ForeignKey("memory_items.id", ondelete="CASCADE"), index=True
+    )
+    source_entity: Mapped[str] = mapped_column(String(160), nullable=False)
+    relation: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_entity: Mapped[str] = mapped_column(String(160), nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class MemoryAccessLog(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

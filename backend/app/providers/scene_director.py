@@ -32,6 +32,10 @@ COMMON_SPEAKER_POLICY = """
 - 당신의 persona와 traits가 말투와 반응에 드러나야 한다. 장난스럽고 적극적인
   보호형 캐릭터라면 가벼운 과장이나 행동 제안을 할 수 있지만, 해당 성격이 없다면
   억지로 유머나 과장된 반응을 부여하지 않는다.
+- speaker의 occupation, gender, age와 age_group은 캐릭터의 생활사 배경 정보다. 대화에서 관련 있을 때
+  설정한 나이와 삶의 단계에 모순되지 않게 반영한다. 단, 나이만으로 성격, 말투,
+  지능, 감정적 성숙도, 관계 경계를 단정하거나 고정관념을 만들지 않는다. 명시된
+  persona, traits, speech_style이 나이보다 우선한다.
 - 사용자가 캐릭터의 이전 말이나 태도 때문에 평가받거나 상처받았다고 말하면
   대화 복구 상황으로 취급한다. 캐릭터 측의 말이 사용자를 힘들게 한 영향을 구체적으로
   인정한 뒤 변명 없이 사과한다.
@@ -54,6 +58,10 @@ COMMON_SPEAKER_POLICY = """
 - 두 캐릭터의 발화를 합친 청취 시간이 사용자의 발화를 압도하지 않도록 핵심만 남긴다.
 - 한국어로 간결하게 작성한다.
 - 답변을 마치면 추가 질문을 강요하지 않고 사용자에게 발화권을 돌린다.
+- speaker.speech_style은 선택 사항이 아니라 이번 대사의 고정 말투 규칙이다.
+- speech_style이 "반말"이면 text 전체를 반말 어미로 작성한다. "요", "습니다", "세요", "말씀하신" 같은 존댓말 어미와 표현을 사용하지 않는다.
+- speech_style이 "존댓말"이면 text 전체를 존댓말로 작성한다. 반말 어미를 섞지 않는다.
+- speech_style이 "관계에 따라 변화"이면 recent_messages의 캐릭터 말투를 우선적으로 이어가며, 한 응답 안에서 말투를 바꾸지 않는다.
 - 출력은 요청에 포함된 JSON 구조와 값 제약을 정확히 따른다.
 - 설명, 마크다운, 코드 블록 없이 JSON 객체만 출력한다.
 - 사용자가 따로 캐릭터 이름을 부르지 않고, 당신이 한 대답에 대한 역질문이나 언급을 하면
@@ -77,6 +85,9 @@ MEMORY_TRACKING_POLICY = """
 - content는 한두 문장으로 짧고 구체적으로 쓴다("사용자는 ~라고 말했다" 형태).
 - sensitivity는 개인적이고 민감할수록 PRIVATE 또는 HIGH를, 가볍고 일상적인 사실은
   PERSONAL 또는 PUBLIC을 사용한다.
+- graph_relation은 content에 실제로 명시된 주체·관계·대상이 있을 때만 has_relation=true로
+  채운다. 추측한 관계나 캐릭터의 해석은 저장하지 않는다. 관계가 없으면 나머지 문자열은
+  비우고 has_relation=false로 둔다.
 - disclosed_memory_ids는 이번 발화에서 당신이 memory_context에 있는 항목 중 하나를
   실제로 말로 옮겨서 다른 참여 캐릭터(other_participants)에게 들려준 경우에만, 그
   memory_context 항목의 id를 넣는다. 말하지 않은 기억, 혼자만 알고 있는 기억은 절대
@@ -94,6 +105,9 @@ PRIMARY_SPEAKER_INSTRUCTIONS = f"""
 
 발화권 배치 정책:
 - 기본적으로 당신 혼자 답한다. needs_second_speaker는 예외적인 경우에만 true로 둔다.
+- 입력의 turn_instruction이 있으면 그것은 서비스가 해석한 발화권 지시다. 반드시
+  따른다. 특히 두 캐릭터가 모두 답하라는 지시라면, 요청을 서술하거나 되풀이하지 말고
+  speaker 자신의 실제 대사를 작성한 뒤 needs_second_speaker=true로 둔다.
 - 두 번째 캐릭터는 첫 번째 답과 다른 유의미한 관점이나 실제 의견 차이가 있을 때만
   답한다. 단순 동의, 같은 위로의 반복, 말투만 바꾼 반복이라면 두 번째 캐릭터는
   침묵한다 — 이 경우 needs_second_speaker=false, second_speaker_reason=NONE.
@@ -126,6 +140,9 @@ SECONDARY_SPEAKER_INSTRUCTIONS = f"""
 - 두 번째 발화는 사용자에게 독립된 설명문을 하나 더 붙이는 방식이 아니라, 앞 캐릭터와
   같은 공간에서 이어 말하는 대화여야 한다. 반대할 때도 앞 발언의 어느 부분과 다른지
   자연스럽게 드러내고 곧바로 자기 관점을 말한다.
+- 입력의 turn_instruction이 있으면 그 발화권 지시를 따른다. 사용자가 자신을
+  지목했거나 앞 캐릭터를 정정한 경우, 앞 캐릭터의 말에 짧게 반응한 뒤 자신의 대사를
+  이어 간다. 사용자의 지시를 설명문으로 되풀이하지 않는다.
 - "기억해 주세요" 같은 명령형보다 "기억했으면 좋겠어요"처럼 사용자의 선택을 존중하는
   부드러운 표현을 사용한다.
 - 당신의 memory_context만 근거로 삼는다. 앞 캐릭터가 무엇을 알고 있는지, 앞 캐릭터의
@@ -144,19 +161,32 @@ def _extracted_memory_schema() -> dict[str, Any]:
                 "type": "string",
                 "enum": ["PUBLIC", "PERSONAL", "PRIVATE", "HIGH"],
             },
+            "graph_relation": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "has_relation": {"type": "boolean"},
+                    "source_entity": {"type": "string", "maxLength": 160},
+                    "relation": {"type": "string", "maxLength": 80},
+                    "target_entity": {"type": "string", "maxLength": 160},
+                    "summary": {"type": "string", "maxLength": 300},
+                },
+                "required": ["has_relation", "source_entity", "relation", "target_entity", "summary"],
+            },
         },
-        "required": ["has_memory", "content", "sensitivity"],
+        "required": ["has_memory", "content", "sensitivity", "graph_relation"],
     }
 
 
 def _disclosed_memory_ids_schema(memory_context_ids: list[str]) -> dict[str, Any]:
-    # Constraining items to the ids actually present on this request means
-    # the model cannot report disclosing a memory it was never given,
-    # independent of whatever the prompt says.
+    # 빈 enum은 Groq의 strict JSON Schema 검증에서 허용되지 않는다. 기억이 없을 때는
+    # maxItems=0으로 빈 배열만 허용한다. 기억이 있을 때만 현재 요청에 실린 ID로 제한한다.
+    if not memory_context_ids:
+        return {"type": "array", "maxItems": 0, "items": {"type": "string"}}
     return {
         "type": "array",
-        "maxItems": 5,
-        "items": {"type": "string", "enum": memory_context_ids} if memory_context_ids else {"type": "string", "enum": []},
+        "maxItems": min(len(memory_context_ids), 5),
+        "items": {"type": "string", "enum": memory_context_ids},
     }
 
 
@@ -186,16 +216,10 @@ def primary_speaker_turn_schema(
                 memory_context_ids or []
             ),
         },
-        "required": [
-            "speaker_id",
-            "to",
-            "emotion",
-            "text",
-            "needs_second_speaker",
-            "second_speaker_reason",
-            "extracted_memory",
-            "disclosed_memory_ids",
-        ],
+        # Pydantic supplies safe defaults for the remaining bookkeeping fields.
+        # Keeping the minimal conversational fields required prevents Groq's
+        # best-effort JSON mode from rejecting otherwise usable replies.
+        "required": ["speaker_id", "to", "emotion", "text"],
     }
 
 
@@ -220,14 +244,7 @@ def secondary_speaker_turn_schema(
                 memory_context_ids or []
             ),
         },
-        "required": [
-            "speaker_id",
-            "to",
-            "emotion",
-            "text",
-            "extracted_memory",
-            "disclosed_memory_ids",
-        ],
+        "required": ["speaker_id", "to", "emotion", "text"],
     }
 
 

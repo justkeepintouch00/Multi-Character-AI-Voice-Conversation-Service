@@ -27,7 +27,21 @@ class ProviderInputError(ProviderError):
 
 
 class ProviderRequestError(ProviderError):
-    pass
+    """An upstream request failed, with safe diagnostic metadata when known."""
+
+    def __init__(
+        self,
+        provider: str,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+        retry_after: str | None = None,
+    ) -> None:
+        super().__init__(provider, message)
+        self.status_code = status_code
+        self.error_code = error_code
+        self.retry_after = retry_after
 
 
 class ProviderTimeoutError(ProviderError):
