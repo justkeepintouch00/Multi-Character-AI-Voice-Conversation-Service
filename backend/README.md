@@ -27,6 +27,10 @@ $env:Path = "C:\Program Files\llama;$env:Path"
 llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080
 ```
 
+```
+llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080 --jinja --chat-template-kwargs '{"enable_thinking":true}' --temperature 1.0 --top-p 0.95 --top-k 64 --presence-penalty 1.0
+```
+
 ### 터미널 2: 평가 백엔드 (8001)
 
 ```powershell
@@ -55,3 +59,4 @@ python -m pytest -q
 ```text
 Ctrl+C
 ```
+
