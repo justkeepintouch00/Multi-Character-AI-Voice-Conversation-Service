@@ -36,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--retry-rate-limit", action="store_true")
+    parser.add_argument("--capture-observability", action="store_true")
     return parser.parse_args()
 
 
@@ -90,9 +91,12 @@ def main() -> int:
             command.append("--dry-run")
         if args.retry_rate_limit:
             command.append("--retry-rate-limit")
+        if args.capture_observability:
+            command.append("--capture-observability")
         print(f"CSV cases: {count}")
         return subprocess.run(command, check=False).returncode
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
