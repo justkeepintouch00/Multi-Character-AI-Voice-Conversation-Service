@@ -333,7 +333,7 @@ def request_scene(client: httpx.Client, case: dict[str, Any], *, max_attempts: i
         messages_response = client.get(f"/{conversation_id}/messages", params={"limit": 100})
         messages_response.raise_for_status()
         messages_payload = messages_response.json()
-        conversation_messages = messages_payload.get("messages", []) if isinstance(messages_payload, dict) else []
+        conversation_messages = messages_payload.get("items", []) if isinstance(messages_payload, dict) else []
         if not isinstance(conversation_messages, list):
             conversation_messages = []
         timings["conversation_read_ms"] = round((time.perf_counter() - started) * 1000)
