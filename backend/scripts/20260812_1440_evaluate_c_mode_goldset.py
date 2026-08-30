@@ -294,7 +294,7 @@ def normalize_setup_messages(case: dict[str, Any]) -> list[dict[str, Any]]:
         raise ValueError("setup_messages/history must be a JSON array")
     return raw
 
-def request_scene(client: httpx.Client, case: dict[str, Any], *, max_attempts: int = 5, retry_rate_limit: bool = False) -> tuple[dict[str, Any], list[str], dict[str, Any]]:
+def request_scene(client: httpx.Client, case: dict[str, Any], *, max_attempts: int = 5, retry_rate_limit: bool = False) -> tuple[dict[str, Any], list[str], dict[str, Any], list[dict[str, Any]]]:
     """Replay public setup messages and then run one scored user turn.
 
     A CHARACTER setup message can be the first message only (opening_message).
@@ -313,7 +313,7 @@ def request_scene(client: httpx.Client, case: dict[str, Any], *, max_attempts: i
     create_payload: dict[str, Any] = {"mode": "TALK", "character_ids": character_ids}
     if opening_message:
         create_payload["opening_message"] = opening_message
-    timings: dict[str, Any] = {"conversation_create_ms": 0, "seed_memory_ms": 0, "setup_message_ms": [], "scored_message_ms": 0}
+    timings: dict[str, Any] = {"conversation_create_ms": 0, "seed_memory_ms": 0, "setup_message_ms": [], "scored_message_ms": 0, "conversation_read_ms": 0}
     started = time.perf_counter()
     conversation = post_with_retry(client, "", create_payload, max_attempts=max_attempts, retry_rate_limit=retry_rate_limit)
     timings["conversation_create_ms"] = round((time.perf_counter() - started) * 1000)
@@ -329,7 +329,15 @@ def request_scene(client: httpx.Client, case: dict[str, Any], *, max_attempts: i
         started = time.perf_counter()
         payload = post_with_retry(client, f"/{conversation_id}/messages", {"content": case["user_text"], "input_mode": "TEXT"}, max_attempts=max_attempts, retry_rate_limit=retry_rate_limit)
         timings["scored_message_ms"] = round((time.perf_counter() - started) * 1000)
-        return payload, created_memory_ids, timings
+        started = time.perf_counter()
+        messages_response = client.get(f"/{conversation_id}/messages", params={"limit": 100})
+        messages_response.raise_for_status()
+        messages_payload = messages_response.json()
+        conversation_messages = messages_payload.get("messages", []) if isinstance(messages_payload, dict) else []
+        if not isinstance(conversation_messages, list):
+            conversation_messages = []
+        timings["conversation_read_ms"] = round((time.perf_counter() - started) * 1000)
+        return payload, created_memory_ids, timings, conversation_messages
     except Exception:
         delete_seed_memories(client, created_memory_ids)
         raise
@@ -394,9 +402,9 @@ def main() -> int:
             else:
                 try:
                     before_snapshot = get_observability_snapshot(client) if args.capture_observability else None
-                    payload, seed_memory_ids, timings = request_scene(client, case, retry_rate_limit=args.retry_rate_limit)
+                    payload, seed_memory_ids, timings, conversation_messages = request_scene(client, case, retry_rate_limit=args.retry_rate_limit)
                     after_snapshot = get_observability_snapshot(client) if args.capture_observability else None
-                    result.update({"request_status": "ok", "scene_plan": payload, "timings": timings})
+                    result.update({"request_status": "ok", "scene_plan": payload, "conversation_messages": conversation_messages, "timings": timings})
                     result["evaluation"] = score_response(case, payload)
                     if args.capture_observability:
                         result["observability"] = {"before": before_snapshot, "after": after_snapshot, "delta": observability_delta(before_snapshot, after_snapshot)}

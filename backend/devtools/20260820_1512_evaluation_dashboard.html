@@ -76,7 +76,14 @@
   const flattenMemoryRun = (report) => (report?.cases||[]).map(c=>({...c,request_status:'ok',actual_result:c.actual,operation:c.case_id,memory_text:c.detail?JSON.stringify(c.detail):'',audit_only:true,audit:{scope:report.scope,unsupported_cases:report.unsupported_cases||[]}}));
   const read = async (id,kind) => { const files=[...$(id).files]; const parsed=(await Promise.all(files.map(parseFile))).flat(); return parsed.flatMap(x=>x?.observed_c_mode?flattenAudit(x):x?.memory_dataset?flattenMemoryAudit(x):x?.scope==='API-supported memory ACL smoke evaluation'&&Array.isArray(x?.cases)?flattenMemoryRun(x):x?.c_mode_goldset||x?.current_db_followups?flattenSummary(x):[x]); };
   const statusClass=s=>s==='ok'?'ok':s==='error'?'error':s||'';
-  const turnsOf = r => {const a=r?.scene_plan?.scene_plan?.turns;const b=r?.scene_plan?.turns;const c=r?.turns;return Array.isArray(a)?a:Array.isArray(b)?b:Array.isArray(c)?c:[]};
+  const turnsOf = r => {
+    const messages = r?.conversation_messages;
+    if (Array.isArray(messages) && messages.length) {
+      return messages.map(m => ({speaker_id: m.speaker_id || (m.speaker_type === 'USER' ? 'USER' : 'character'), emotion: m.speaker_type === 'USER' ? '사용자' : '—', text: m.content || ''}));
+    }
+    const a=r?.scene_plan?.scene_plan?.turns;const b=r?.scene_plan?.turns;const c=r?.turns;
+    return Array.isArray(a)?a:Array.isArray(b)?b:Array.isArray(c)?c:[];
+  };
   const merged = (kind) => { const s=state[kind], map=new Map(s.results.map(r=>[r.case_id,r])); const source=s.goldset.length?s.goldset:s.results.map(r=>({...r.goldset,...r,case_id:r.case_id,phase:r.phase,user_text:r.user_text})); const linked=source.map(g=>({g,r:map.get(g.case_id)||s.results.find(x=>x.case_id===g.case_id)})); const ids=new Set(linked.map(x=>x.r?.case_id).filter(Boolean)); return linked.concat(s.results.filter(r=>!ids.has(r.case_id)).map(r=>({g:{case_id:r.case_id,phase:r.phase,user_text:r.user_text,audit_only:r.audit_only},r}))); };
   function renderCharacterCatalog(){const el=$('character-catalog');if(!el)return;const source=state.dialogue.goldset[0]||state.dialogue.results.find(x=>x.character_map_json);let map=source?.character_map_json||source?.character_catalog;if(typeof map==='string'){try{map=JSON.parse(map)}catch{map=null}};if(!map||typeof map!=='object'){el.innerHTML='';return}const entries=Object.entries(map);el.innerHTML='<h2>평가 대상 캐릭터</h2><p class="note">이번 데이터셋은 아래 두 캐릭터를 고정 대상으로 사용합니다. 응답의 화자 ID와 성격 기준을 함께 확인하세요.</p><div class="character-grid">'+entries.map(([key,c])=>'<div class="character-card"><h3>'+esc(c.name||key)+' <span class="tag">'+esc(key)+'</span></h3><p><b>ID</b> '+esc(c.id||'—')+' · <b>나이</b> '+esc(c.age??'—')+'세 · <b>직업</b> '+esc(c.occupation||'—')+'</p><p><b>성격</b> '+esc((c.traits||[]).join(', ')||'—')+'</p><p><b>말투</b> '+esc(c.speech_style||'—')+' · <b>관계</b> '+esc(c.relationship_style||'—')+'</p><p>'+esc(c.persona||'')+'</p></div>').join('')+'</div>';}
   const list=(items)=>`<ul class="list">${items.length?items.map(x=>`<li>${esc(x)}</li>`).join(''):'<li class="empty">없음</li>'}</ul>`;
@@ -85,7 +92,7 @@
   const automatic=(r)=>r?.evaluation||{};
   const countersOf = r => r?.observability?.delta?.counter_delta||[];
   const counterValue = (r,name) => countersOf(r).filter(x=>x.name===name).reduce((sum,x)=>sum+Number(x.value||0),0);
-  const timingText = r => { const t=r?.timings; if(!t) return r?.duration_ms!=null?'케이스 전체 '+r.duration_ms+'ms · 단계별 기록 없음':'실행 시간 데이터 없음'; const setup=(t.setup_message_ms||[]).map((v,i)=>'설정'+(i+1)+' '+v+'ms').join(' · '); return ['전체 '+(t.total_ms??r.duration_ms??'—')+'ms','대화 생성 '+(t.conversation_create_ms??'—')+'ms','메모리 준비 '+(t.seed_memory_ms??'—')+'ms',setup,'최종 질문 '+(t.scored_message_ms??'—')+'ms'].filter(Boolean).join(' · '); };
+  const timingText = r => { const t=r?.timings; if(!t) return r?.duration_ms!=null?'케이스 전체 '+r.duration_ms+'ms · 단계별 기록 없음':'실행 시간 데이터 없음'; const setup=(t.setup_message_ms||[]).map((v,i)=>'설정'+(i+1)+' '+v+'ms').join(' · '); return ['전체 '+(t.total_ms??r.duration_ms??'—')+'ms','대화 생성 '+(t.conversation_create_ms??'—')+'ms','메모리 준비 '+(t.seed_memory_ms??'—')+'ms',setup,'최종 질문 '+(t.scored_message_ms??'—')+'ms','대화 기록 조회 '+(t.conversation_read_ms??'—')+'ms'].filter(Boolean).join(' · '); };
   const observationText = r => { if(!r?.observability)return '관측성 데이터 없음 (이전 실행 결과이거나 서버 지표 조회 실패)'; const llm=counterValue(r,'llm_calls_total'), mem=counterValue(r,'memory_searches_total'); const path=countersOf(r).find(x=>x.name==='conversation_execution_paths_total'); const duration=r.duration_ms!=null?`${r.duration_ms}ms`:'—'; return `LLM 호출 ${llm} · 메모리 검색 ${mem} · 실행 경로 ${path?.labels?.path||'—'} · 전체 ${duration}`; };
   const addSummary=(id, values)=>{$(id).innerHTML=values.map(x=>`<div class="metric"><div class="name">${esc(x.name)}</div><div class="value ${x.class||''}">${esc(x.value)}</div></div>`).join('');};
   const counterValueWhere = (r,name,predicate=()=>true) => countersOf(r).filter(x=>x.name===name&&predicate(x.labels||{})).reduce((sum,x)=>sum+Number(x.value||0),0);
@@ -110,6 +117,4 @@
 </script>
 </body>
 </html>
-
-
 
