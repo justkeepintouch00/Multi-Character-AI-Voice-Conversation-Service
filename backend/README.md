@@ -1,62 +1,24 @@
-# Backend
+# 실행 명령어
 
-## 설치
+## Gemma 추론 켜기
 
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-python -m alembic -c alembic.ini upgrade head
-```
-
-## 일반 백엔드 (8000)
-
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-python -m uvicorn app.main:app --reload --port 8000
-```
-
-## 평가 실행 (Gemma 4 E2B)
-
-### 터미널 1: Gemma 서버 (8080)
-
-```powershell
 $env:Path = "C:\Program Files\llama;$env:Path"
-llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080
-```
+llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080 --jinja --chat-template-kwargs '{"enable_thinking":true}'
 
-```
-llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080 --jinja --chat-template-kwargs '{"enable_thinking":true}' --temperature 1.0 --top-p 0.95 --top-k 64 --presence-penalty 1.0
-```
+## Gemma 추론 끄기
 
-### 터미널 2: 평가 백엔드 (8001)
+$env:Path = "C:\Program Files\llama;$env:Path"
+llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080 --jinja --chat-template-kwargs '{"enable_thinking":false}'
 
-```powershell
+## 평가 백엔드 8001
+
 cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service"
 .\backend\.venv\Scripts\Activate.ps1
 .\backend\scripts\20260824_1740_start_evaluation_backend.ps1
-```
 
-### 상태 확인
+## 프론트 5174
 
-```powershell
-Invoke-RestMethod "http://127.0.0.1:8080/v1/models"
-Invoke-RestMethod "http://127.0.0.1:8001/health"
-```
-
-## 테스트
-
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-python -m pytest -q
-```
-
-## 종료
-
-```text
-Ctrl+C
-```
-
+cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\frontend"
+$env:VITE_API_BASE_URL = "http://127.0.0.1:8001"
+npm install
+npm run dev -- --port 5174

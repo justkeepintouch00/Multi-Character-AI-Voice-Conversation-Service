@@ -48,7 +48,7 @@ def test_gemma_scene_director_uses_openai_compatible_chat_endpoint() -> None:
         assert payload["model"] == "gemma4-e2b"
         assert payload["temperature"] == 0.2
         assert payload["top_p"] == 0.95
-        assert payload["max_tokens"] == 220
+        assert payload["max_tokens"] == 768
         assert payload["stream"] is True
         assert payload["response_format"] == {"type": "json_object"}
 
@@ -121,4 +121,5 @@ def test_scene_director_selection_rejects_unknown_provider(
         match="Unsupported SCENE_DIRECTOR_PROVIDER",
     ):
         dependencies.get_scene_director_provider()
+
 

@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
-from app.observability import METRICS, log_event
+from app.observability import METRICS, log_event, record_llm_usage
 from app.observability.langsmith import finish_trace, trace_llm_call
 
 from app.providers.base import (
@@ -116,10 +116,15 @@ def _normalize_turn_payload(
 ) -> dict[str, Any]:
     """Make a local model's best-effort JSON safe for the strict turn schema."""
     raw_text = payload.get("text")
+    if not isinstance(raw_text, str) or not raw_text.strip():
+        for key in ("message", "response", "reply", "answer", "content", "greeting"):
+            candidate = payload.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                raw_text = candidate
+                break
     text = raw_text.strip() if isinstance(raw_text, str) else ""
     if not text:
         raise ValueError("Gemma output text is empty")
-
     raw_to = payload.get("to")
     to = raw_to if isinstance(raw_to, str) else "USER"
     if to not in {"USER", *other_participant_ids}:
@@ -260,9 +265,11 @@ class GemmaSceneDirector:
                     "messages": messages,
                     "temperature": 0.2,
                     "top_p": 0.95,
-                    "max_tokens": 220,
+                    "max_tokens": 768,
                     "response_format": {"type": "json_object"},
                     "stream": True,
+                    # Ask OpenAI-compatible local servers to include usage.
+                    "stream_options": {"include_usage": True},
                 }
             )
             try:
@@ -284,6 +291,12 @@ class GemmaSceneDirector:
             except (ProviderResponseError, json.JSONDecodeError, ValidationError, ValueError) as exc:
                 last_validation_error = exc
                 if attempt < self.max_attempts:
+                    METRICS.increment(
+                        "llm_retries_total",
+                        provider=PROVIDER_NAME,
+                        model=self.model,
+                        reason="invalid_structured_output",
+                    )
                     if output_text:
                         messages.append(
                             {
@@ -359,6 +372,11 @@ class GemmaSceneDirector:
                 PROVIDER_NAME,
                 "Gemma Scene Director returned an invalid response",
             )
+        record_llm_usage(
+            PROVIDER_NAME,
+            self.model,
+            response_payload.get("usage"),
+        )
         return response_payload
 
     @staticmethod
@@ -376,6 +394,7 @@ class GemmaSceneDirector:
 
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
+        usage: dict[str, Any] | None = None
         for line in response.text.splitlines():
             if not line.startswith("data:"):
                 continue
@@ -385,6 +404,9 @@ class GemmaSceneDirector:
             chunk = json.loads(data)
             if not isinstance(chunk, dict):
                 continue
+            chunk_usage = chunk.get("usage")
+            if isinstance(chunk_usage, dict):
+                usage = chunk_usage
             choices = chunk.get("choices")
             if not isinstance(choices, list) or not choices:
                 continue
@@ -393,14 +415,22 @@ class GemmaSceneDirector:
                 continue
             delta = choice.get("delta")
             message = choice.get("message")
-            part = delta if isinstance(delta, dict) else message
-            if isinstance(part, dict):
+            parts = [part for part in (delta, message) if isinstance(part, dict)]
+            for part in parts:
                 for key in ("content", "text"):
                     value = part.get(key)
                     if isinstance(value, str):
                         content_parts.append(value)
-                value = part.get("reasoning_content")
-                if isinstance(value, str):
-                    reasoning_parts.append(value)
+                for key in ("reasoning_content", "reasoning"):
+                    value = part.get(key)
+                    if isinstance(value, str):
+                        reasoning_parts.append(value)
         visible = "".join(content_parts)
-        return {"choices": [{"message": {"content": visible or "".join(reasoning_parts)}}]}
+        payload: dict[str, Any] = {
+            "choices": [{"message": {"content": visible or "".join(reasoning_parts)}}]
+        }
+        if usage is not None:
+            payload["usage"] = usage
+        return payload
+
+
