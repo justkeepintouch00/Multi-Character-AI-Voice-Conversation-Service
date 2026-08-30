@@ -85,7 +85,7 @@
   const automatic=(r)=>r?.evaluation||{};
   const countersOf = r => r?.observability?.delta?.counter_delta||[];
   const counterValue = (r,name) => countersOf(r).filter(x=>x.name===name).reduce((sum,x)=>sum+Number(x.value||0),0);
-  const timingText = r => { const t=r?.timings; if(!t) return r?.duration_ms!=null?'케이스 전체 '+r.duration_ms+'ms · 단계별 기록 없음':'실행 시간 데이터 없음'; const setup=(t.setup_message_ms||[]).map((v,i)=>'설정'+(i+1)+' '+v+'ms').join(' · '); return ['전체 '+(t.total_ms??r.duration_ms??'—')+'ms','대화 생성 '+(t.conversation_create_ms??'—')+'ms',setup,'최종 질문 '+(t.scored_message_ms??'—')+'ms'].filter(Boolean).join(' · '); };
+  const timingText = r => { const t=r?.timings; if(!t) return r?.duration_ms!=null?'케이스 전체 '+r.duration_ms+'ms · 단계별 기록 없음':'실행 시간 데이터 없음'; const setup=(t.setup_message_ms||[]).map((v,i)=>'설정'+(i+1)+' '+v+'ms').join(' · '); return ['전체 '+(t.total_ms??r.duration_ms??'—')+'ms','대화 생성 '+(t.conversation_create_ms??'—')+'ms','메모리 준비 '+(t.seed_memory_ms??'—')+'ms',setup,'최종 질문 '+(t.scored_message_ms??'—')+'ms'].filter(Boolean).join(' · '); };
   const observationText = r => { if(!r?.observability)return '관측성 데이터 없음 (이전 실행 결과이거나 서버 지표 조회 실패)'; const llm=counterValue(r,'llm_calls_total'), mem=counterValue(r,'memory_searches_total'); const path=countersOf(r).find(x=>x.name==='conversation_execution_paths_total'); const duration=r.duration_ms!=null?`${r.duration_ms}ms`:'—'; return `LLM 호출 ${llm} · 메모리 검색 ${mem} · 실행 경로 ${path?.labels?.path||'—'} · 전체 ${duration}`; };
   const addSummary=(id, values)=>{$(id).innerHTML=values.map(x=>`<div class="metric"><div class="name">${esc(x.name)}</div><div class="value ${x.class||''}">${esc(x.value)}</div></div>`).join('');};
   const counterValueWhere = (r,name,predicate=()=>true) => countersOf(r).filter(x=>x.name===name&&predicate(x.labels||{})).reduce((sum,x)=>sum+Number(x.value||0),0);
@@ -110,5 +110,6 @@
 </script>
 </body>
 </html>
+
 
 
