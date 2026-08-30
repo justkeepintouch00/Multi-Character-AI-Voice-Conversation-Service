@@ -265,7 +265,7 @@ class GemmaSceneDirector:
                     "messages": messages,
                     "temperature": 0.2,
                     "top_p": 0.95,
-                    "max_tokens": 768,
+                    "max_tokens": 768 if attempt == 1 else 1280,
                     "response_format": {"type": "json_object"},
                     "stream": True,
                     # Ask OpenAI-compatible local servers to include usage.
@@ -432,5 +432,6 @@ class GemmaSceneDirector:
         if usage is not None:
             payload["usage"] = usage
         return payload
+
 
 
