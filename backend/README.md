@@ -20,23 +20,23 @@ llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 -
 $env:Path = "C:\Program Files\llama;$env:Path"
 llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080 --jinja --chat-template-kwargs '{"enable_thinking":false}'
 
-## 3. 백엔드 8001
+## 3. 백엔드 8001 (v1)
 
 cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service"
 .\backend\.venv\Scripts\Activate.ps1
+$env:MEMORY_POLICY_VERSION="v1"
 .\backend\scripts\20260824_1740_start_evaluation_backend.ps1
 
-## 4. 프론트 5174
+## 4. 백엔드 8001 (v2)
+
+$env:MEMORY_POLICY_VERSION="v2"
+.\backend\scripts\20260824_1740_start_evaluation_backend.ps1
+
+## 5. 프론트 5174
 
 cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\frontend"
 $env:VITE_API_BASE_URL="http://127.0.0.1:8001"
 npm run dev -- --port 5174
-
-## 5. 메모리 정책 선택 (3번 실행 전에 하나만 선택)
-
-$env:MEMORY_POLICY_VERSION="v1"
-# 또는
-$env:MEMORY_POLICY_VERSION="v2"
 
 ## 6. 메모리 구조 평가
 
