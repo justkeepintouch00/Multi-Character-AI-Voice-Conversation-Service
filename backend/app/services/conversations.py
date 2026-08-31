@@ -637,7 +637,31 @@ class ConversationService:
                 routing_reason="explicit_correction_target",
             )
 
-        if len(mentioned_ids) >= 2 and re.search(r"(?:둘\s*다|모두|각각|함께)", user_text):
+        # If the user rejects one named character's opinion, let the other
+        # participant answer the disagreement instead of routing back to the
+        # character whose statement was challenged.
+        if len(mentioned_ids) == 1:
+            challenged_id = mentioned_ids[0]
+            challenged_aliases = cls._speaker_aliases(
+                challenged_id, character_profiles[challenged_id]
+            )
+            disagreement = any(
+                re.search(
+                    rf"{re.escape(alias)}[^\n.!?]{{0,40}}(?:동의가\s*안|동의하지|동의\s*안)",
+                    user_text,
+                    flags=re.IGNORECASE,
+                )
+                for alias in challenged_aliases
+                if alias
+            )
+            if disagreement:
+                responder_id = next(item for item in character_ids if item != challenged_id)
+                return SpeakerSelection(
+                    first_id=responder_id,
+                    second_id=None,
+                    routing_reason="disagreement_with_previous_speaker",
+                )
+        if len(mentioned_ids) >= 2 and re.search(r"(?:둘\s*다|둘이|모두|각각|함께|두\s*명|두\s*캐릭터)", user_text):
             return SpeakerSelection(
                 first_id=last_speaker_id or character_ids[0],
                 second_id=next(item for item in character_ids if item != (last_speaker_id or character_ids[0])),
@@ -667,6 +691,8 @@ class ConversationService:
             return "사용자가 당신에게 발화권을 넘겼다. 앞 캐릭터의 짧은 인정 뒤에, 현재 대화 주제에 직접 답한다."
         if selection.routing_reason == "explicit_correction_target":
             return "사용자가 당신에게 직접 답하라고 지목했다. 다른 캐릭터의 사과나 설명을 대신하지 말고 현재 대화 주제에 직접 답한다."
+        if selection.routing_reason == "disagreement_with_previous_speaker":
+            return "사용자가 다른 캐릭터의 의견에 동의하지 않는다고 했다. 그 반대 지점을 짚고 당신의 관점을 직접 말한다. 앞 캐릭터의 말을 반복하거나 사용자의 말을 다시 묻지 않는다."
         return None
 
     @classmethod
