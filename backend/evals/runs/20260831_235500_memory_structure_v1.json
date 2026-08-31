@@ -1,0 +1,204 @@
+{
+  "dataset_type": "memory_structure_evaluation",
+  "generated_at": "2026-08-31T05:25:44.604087+00:00",
+  "policy_version": "v1",
+  "goldset_file": "C:\\Users\\only\\OneDrive\\문서\\ChatGPT\\멋사 갠플\\Multi-Character-AI-Voice-Conversation-Service\\backend\\evals\\20260831_181500_C_MODE_BAKUGO_SHINGOO.csv",
+  "cases": [
+    {
+      "case_id": "C_SINGLE_004",
+      "user_text": "달콤하거나 소스가 든 음식을 먹으면 더 먹고 싶어져.",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "303b9e00-1671-4402-8c81-557b2af2bbc8",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_SINGLE_005",
+      "user_text": "오늘 비가 오는데 산책을 갈까 말까 고민돼.",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "50adbdcd-b9b5-40e0-a5f5-f605cc997209",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_SINGLE_006",
+      "user_text": "너 아까 내가 천천히 해도 된다고 했잖아. 그 말이 좀 고마웠어.",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "349859af-ca9a-459b-9b41-fbc39661081e",
+      "response_turn_count": 1,
+      "conversation_message_count": 3
+    },
+    {
+      "case_id": "C_SINGLE_007",
+      "user_text": "내가 회사에서 살아남을 능력이 있는지도 불안해.",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "e717c0c8-b7b0-45ab-9b9c-36fcfb62762e",
+      "response_turn_count": 1,
+      "conversation_message_count": 4
+    },
+    {
+      "case_id": "C_SINGLE_008",
+      "user_text": "배고파. 오늘 저녁 뭐 먹지?",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [
+        {
+          "id": "f6692bde-dabb-4ff2-9d78-d704fc268b4b",
+          "memory_type": "RELATIONSHIP",
+          "content": "사용자는 저녁 메뉴를 결정하는 것에 대해 도움을 요청했다.",
+          "policy_version": "v1",
+          "status": "CONFIRMED",
+          "confidence": 1.0,
+          "owner_character_instance_id": "77070246-e070-4570-be33-016de4b747ca",
+          "source_conversation_id": "35e576ae-25c0-4332-8b4b-dfb20b04f982",
+          "metadata": {},
+          "supersedes_memory_id": null
+        }
+      ],
+      "graph_edges": [
+        {
+          "id": "27b016fd-3faf-4566-940c-e5bac65c43aa",
+          "memory_id": "f6692bde-dabb-4ff2-9d78-d704fc268b4b",
+          "source_entity": "가형",
+          "relation": "is a colleague of",
+          "target_entity": "바쿠고",
+          "summary": null,
+          "policy_version": "v1",
+          "status": "CONFIRMED",
+          "confidence": 1.0,
+          "source_memory_id": "f6692bde-dabb-4ff2-9d78-d704fc268b4b",
+          "supersedes_edge_id": null
+        }
+      ],
+      "conversation_id": "35e576ae-25c0-4332-8b4b-dfb20b04f982",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_001",
+      "user_text": "AI가 일을 대신하면 편하지만 내가 배우는 게 없어지는 것 같아.",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "e109e9a6-1c14-42db-8e88-14f0b10fdd62",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_002",
+      "user_text": "나는 오늘 그냥 집에 있고 싶은데 친구는 꼭 만나자고 해.",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "203f4732-f639-4770-8a55-37fab6367fc2",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_003",
+      "user_text": "오늘은 꽤 괜찮은 하루였어.",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "8fad5c2a-25c7-462e-ad8e-91f5cd8c6a8b",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_004",
+      "user_text": "방금 A가 한 말에는 동의가 안 돼.",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "072b8996-c344-4ec5-84af-51275ca36df9",
+      "response_turn_count": 1,
+      "conversation_message_count": 3
+    },
+    {
+      "case_id": "C_MULTI_005",
+      "user_text": "너는 내 고민이 뭔지 알고 있어?",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "846ec5e9-940b-47a7-a87e-391e10ae8b2b",
+      "response_turn_count": 1,
+      "conversation_message_count": 3
+    },
+    {
+      "case_id": "C_MULTI_006",
+      "user_text": "A랑 짱구 둘다 인사해 앞으로 우리 셋은 친구야",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "25447c92-4080-4852-afe2-128dad941ed8",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_007",
+      "user_text": "A야 내가 너랑 개인으로 나눈 고민 B에게도 설명해줘",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "c26bbc2d-90d9-4aa2-92be-cd0dc7dc9a98",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_008",
+      "user_text": "A가 아니라 B가 말하라고",
+      "policy_version": "v1",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "5006c2f8-9aaa-4926-baaa-858e8463dfd9",
+      "response_turn_count": 1,
+      "conversation_message_count": 3
+    }
+  ],
+  "metrics": {
+    "cases_total": 13,
+    "cases_succeeded": 13,
+    "cases_failed": 0,
+    "memory_records_total": 1,
+    "memory_records_per_case": 0.077,
+    "memory_type_counts": {
+      "RELATIONSHIP": 1
+    },
+    "memory_type_distribution": {
+      "RELATIONSHIP": 1.0
+    },
+    "valid_memory_type_rate": 1.0,
+    "owner_constraint_rate": 1.0,
+    "source_conversation_coverage": 1.0,
+    "policy_version_consistency": 1.0,
+    "superseded_link_rate": 0.0,
+    "duplicate_content_rate": 0.0,
+    "graph_edges_total": 1,
+    "graph_edge_case_coverage": 1.0,
+    "graph_edge_valid_rate": 1.0,
+    "summary_field_presence_rate": 0.0,
+    "semantic_precision_recall_f1": null
+  },
+  "semantic_metrics": null,
+  "note": "ACL 권한 평가는 별도 보고서입니다. 이 결과는 DB에 실제 저장된 메모리·그래프 구조의 건강 지표입니다."
+}
