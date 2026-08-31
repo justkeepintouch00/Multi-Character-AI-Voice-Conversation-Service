@@ -37,3 +37,10 @@ npm run dev -- --port 5174
 $env:MEMORY_POLICY_VERSION="v1"
 # 또는
 $env:MEMORY_POLICY_VERSION="v2"
+
+## 6. 메모리 구조 평가
+
+cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\backend"
+python scripts\20260831_235500_evaluate_memory_structure.py --policy-version v1 --database-url "postgresql+psycopg://postgres:0206@localhost:5432/character_companion_eval" --output evals\runs\20260831_235500_memory_structure_v1.json
+python scripts\20260831_235500_evaluate_memory_structure.py --policy-version v2 --database-url "postgresql+psycopg://postgres:0206@localhost:5432/character_companion_eval" --output evals\runs\20260831_235500_memory_structure_v2.json
+python scripts\20260831_235500_evaluate_memory_structure.py --compare evals\runs\20260831_235500_memory_structure_v1.json evals\runs\20260831_235500_memory_structure_v2.json --output evals\runs\20260831_235500_memory_structure_comparison.json

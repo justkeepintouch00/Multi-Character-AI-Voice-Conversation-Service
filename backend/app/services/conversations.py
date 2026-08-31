@@ -498,17 +498,24 @@ class ConversationService:
             character_ids=character_ids,
             owner_character_id=owner_character_id,
         )
+        memory_type = (
+            result.extracted_memory.memory_kind
+            if self.memory_policy_version == "v2"
+            else "RELATIONSHIP"
+        )
+        # USER_GLOBAL/GROUP are user-scoped records and the database contract
+        # requires them to have no character owner. Character-scoped kinds may
+        # retain the speaking character as owner.
+        owner_instance_id = (
+            None
+            if memory_type in {"USER_GLOBAL", "GROUP"}
+            else context.character_instance_ids[owner_character_id]
+        )
         memory_record = self.memory_repository.create_memory(
             user_id=context.user_id,
             content=content,
-            memory_type=(
-                result.extracted_memory.memory_kind
-                if self.memory_policy_version == "v2"
-                else "RELATIONSHIP"
-            ),
-            owner_character_instance_id=context.character_instance_ids[
-                owner_character_id
-            ],
+            memory_type=memory_type,
+            owner_character_instance_id=owner_instance_id,
             sensitivity=result.extracted_memory.sensitivity,
             granted_by_user_id=context.user_id,
             readable_by=[
