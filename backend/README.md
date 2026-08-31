@@ -1,30 +1,39 @@
 # 실행 명령어
 
-## Gemma 추론 켜기
+## 0. 백엔드 실행 전 설정
+
+cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\backend"
+.\.venv\Scripts\Activate.ps1
+if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env" }
+$env:LANGSMITH_TRACING="true"
+$env:LANGSMITH_API_KEY="여기에_LangSmith_API_KEY"
+$env:LANGSMITH_PROJECT="character-companion-dev"
+alembic upgrade head
+
+## 1. Gemma 추론 켜기
 
 $env:Path = "C:\Program Files\llama;$env:Path"
 llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080 --jinja --chat-template-kwargs '{"enable_thinking":true}'
 
-## Gemma 추론 끄기
+## 2. Gemma 추론 끄기
 
 $env:Path = "C:\Program Files\llama;$env:Path"
 llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080 --jinja --chat-template-kwargs '{"enable_thinking":false}'
 
-## 평가 백엔드 8001
+## 3. 백엔드 8001
 
 cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service"
 .\backend\.venv\Scripts\Activate.ps1
 .\backend\scripts\20260824_1740_start_evaluation_backend.ps1
 
-## 프론트 5174
+## 4. 프론트 5174
 
 cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\frontend"
-$env:VITE_API_BASE_URL = "http://127.0.0.1:8001"
-npm install
+$env:VITE_API_BASE_URL="http://127.0.0.1:8001"
 npm run dev -- --port 5174
-## 메모리 규칙 v1/v2
 
-cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\backend"
-alembic upgrade head
+## 5. 메모리 정책 선택 (3번 실행 전에 하나만 선택)
+
 $env:MEMORY_POLICY_VERSION="v1"
+# 또는
 $env:MEMORY_POLICY_VERSION="v2"
