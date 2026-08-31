@@ -46,6 +46,7 @@ class ExtractedMemory(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     has_memory: bool
+    memory_kind: Literal["USER_GLOBAL", "RELATIONSHIP", "GROUP", "CHARACTER_INTERNAL", "PROFILE", "EPISODE"] = "RELATIONSHIP"
     content: str = Field(default="", max_length=500)
     sensitivity: Literal["PUBLIC", "PERSONAL", "PRIVATE", "HIGH"] = "PERSONAL"
     graph_relation: MemoryGraphRelation = Field(default_factory=MemoryGraphRelation)

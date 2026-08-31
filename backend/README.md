@@ -22,3 +22,9 @@ cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice
 $env:VITE_API_BASE_URL = "http://127.0.0.1:8001"
 npm install
 npm run dev -- --port 5174
+## 메모리 규칙 v1/v2
+
+cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\backend"
+alembic upgrade head
+$env:MEMORY_POLICY_VERSION="v1"
+$env:MEMORY_POLICY_VERSION="v2"

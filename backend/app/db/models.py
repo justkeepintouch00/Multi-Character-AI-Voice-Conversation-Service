@@ -604,7 +604,7 @@ class MemoryItem(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "memory_type IN ('USER_GLOBAL', 'RELATIONSHIP', 'GROUP', "
-            "'CHARACTER_INTERNAL')",
+            "'CHARACTER_INTERNAL', 'PROFILE', 'EPISODE')",
             name="memory_type_values",
         ),
         CheckConstraint(
@@ -615,10 +615,18 @@ class MemoryItem(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "(memory_type IN ('RELATIONSHIP', 'CHARACTER_INTERNAL') "
             "AND owner_character_instance_id IS NOT NULL) OR "
             "(memory_type IN ('USER_GLOBAL', 'GROUP') "
-            "AND owner_character_instance_id IS NULL)",
+            "AND owner_character_instance_id IS NULL) OR "
+            "memory_type IN ('PROFILE', 'EPISODE')",
             name="owner_matches_memory_type",
         ),
         Index("ix_memory_items_user_type", "user_id", "memory_type"),
+        Index("ix_memory_items_user_policy", "user_id", "policy_version"),
+        CheckConstraint("policy_version IN ('v1', 'v2')", name="policy_version_values"),
+        CheckConstraint(
+            "status IN ('CANDIDATE', 'CONFIRMED', 'SUPERSEDED', 'REVOKED')",
+            name="memory_status_values",
+        ),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="confidence_range"),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -646,6 +654,24 @@ class MemoryItem(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    policy_version: Mapped[str] = mapped_column(
+        String(8), default="v1", server_default="v1", nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default="CONFIRMED", server_default="CONFIRMED", nullable=False
+    )
+    confidence: Mapped[float] = mapped_column(
+        Numeric(4, 3), default=1.0, server_default="1.0", nullable=False
+    )
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    supersedes_memory_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("memory_items.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
 
@@ -707,6 +733,13 @@ class MemoryGraphEdge(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         CheckConstraint("length(trim(target_entity)) > 0", name="nonempty_target_entity"),
         Index("ix_memory_graph_edges_user_source", "user_id", "source_entity"),
         Index("ix_memory_graph_edges_user_target", "user_id", "target_entity"),
+        Index("ix_memory_graph_edges_user_policy", "user_id", "policy_version"),
+        CheckConstraint("policy_version IN ('v1', 'v2')", name="policy_version_values"),
+        CheckConstraint(
+            "status IN ('CANDIDATE', 'CONFIRMED', 'SUPERSEDED', 'REVOKED')",
+            name="edge_status_values",
+        ),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="edge_confidence_range"),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -719,6 +752,24 @@ class MemoryGraphEdge(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     relation: Mapped[str] = mapped_column(String(80), nullable=False)
     target_entity: Mapped[str] = mapped_column(String(160), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    policy_version: Mapped[str] = mapped_column(
+        String(8), default="v1", server_default="v1", nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default="CONFIRMED", server_default="CONFIRMED", nullable=False
+    )
+    confidence: Mapped[float] = mapped_column(
+        Numeric(4, 3), default=1.0, server_default="1.0", nullable=False
+    )
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    supersedes_edge_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("memory_graph_edges.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
 
 class MemoryAccessLog(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):

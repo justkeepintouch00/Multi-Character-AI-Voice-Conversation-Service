@@ -5,7 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-MemoryType = Literal["USER_GLOBAL", "RELATIONSHIP", "GROUP", "CHARACTER_INTERNAL"]
+MemoryType = Literal["USER_GLOBAL", "RELATIONSHIP", "GROUP", "CHARACTER_INTERNAL", "PROFILE", "EPISODE"]
 Sensitivity = Literal["PUBLIC", "PERSONAL", "PRIVATE", "HIGH"]
 
 
@@ -28,6 +28,9 @@ class MemoryRead(BaseModel):
     memory_type: MemoryType
     sensitivity: Sensitivity
     owner_character_id: str | None
+    policy_version: Literal["v1", "v2"] = "v1"
+    status: Literal["CANDIDATE", "CONFIRMED", "SUPERSEDED", "REVOKED"] = "CONFIRMED"
+    confidence: float = Field(default=1.0, ge=0, le=1)
 
 
 class MemoryListResponse(BaseModel):

@@ -151,4 +151,7 @@ class MemoryService:
                 if record.owner_character_instance_id is not None
                 else None
             ),
+            policy_version=record.policy_version,
+            status=record.status,
+            confidence=record.confidence,
         )

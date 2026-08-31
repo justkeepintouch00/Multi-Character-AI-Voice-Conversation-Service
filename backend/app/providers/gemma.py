@@ -106,6 +106,7 @@ _VALID_SECOND_SPEAKER_REASONS = {
     "NONE", "DIFFERING_VIEWPOINT", "AGREEMENT_BACKUP",
 }
 _VALID_SENSITIVITIES = {"PUBLIC", "PERSONAL", "PRIVATE", "HIGH"}
+_VALID_MEMORY_KINDS = {"USER_GLOBAL", "RELATIONSHIP", "GROUP", "CHARACTER_INTERNAL", "PROFILE", "EPISODE"}
 
 
 def _normalize_turn_payload(
@@ -147,6 +148,8 @@ def _normalize_turn_payload(
     sensitivity = extracted.get("sensitivity")
     if sensitivity not in _VALID_SENSITIVITIES:
         sensitivity = "PERSONAL"
+    raw_kind = extracted.get("memory_kind")
+    memory_kind = raw_kind if raw_kind in _VALID_MEMORY_KINDS else "RELATIONSHIP"
     memory_content = extracted.get("content")
     if not isinstance(memory_content, str):
         memory_content = ""
@@ -175,6 +178,7 @@ def _normalize_turn_payload(
         "second_speaker_reason": reason if request.role == "PRIMARY" else "NONE",
         "extracted_memory": {
             "has_memory": has_memory,
+            "memory_kind": memory_kind,
             "content": memory_content[:500] if has_memory else "",
             "sensitivity": sensitivity,
             "graph_relation": {

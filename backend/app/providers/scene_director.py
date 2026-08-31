@@ -93,6 +93,7 @@ MEMORY_TRACKING_POLICY = """
 - 캐릭터가 추측하거나 해석한 감정을 사실처럼 저장하지 않는다. 사용자가 실제로 말한
   내용만 content에 담는다.
 - content는 한두 문장으로 짧고 구체적으로 쓴다("사용자는 ~라고 말했다" 형태).
+- memory_kind는 사실의 성격에 따라 USER_GLOBAL, PROFILE, EPISODE, RELATIONSHIP, CHARACTER_INTERNAL 중 하나를 선택한다. 단순한 현재 대화의 사건은 EPISODE, 지속되는 선호·목표·제약은 PROFILE로 분류한다.
 - sensitivity는 개인적이고 민감할수록 PRIVATE 또는 HIGH를, 가볍고 일상적인 사실은
   PERSONAL 또는 PUBLIC을 사용한다.
 - graph_relation은 content에 실제로 명시된 주체·관계·대상이 있을 때만 has_relation=true로
@@ -166,6 +167,10 @@ def _extracted_memory_schema() -> dict[str, Any]:
         "additionalProperties": False,
         "properties": {
             "has_memory": {"type": "boolean"},
+            "memory_kind": {
+                "type": "string",
+                "enum": ["USER_GLOBAL", "RELATIONSHIP", "GROUP", "CHARACTER_INTERNAL", "PROFILE", "EPISODE"],
+            },
             "content": {"type": "string", "maxLength": 500},
             "sensitivity": {
                 "type": "string",

@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import MemoryACL, MemoryAccessLog, MemoryItem
+from app.memory.policy import MemoryPolicyVersion
 
 
 ReasonCode = Literal["OWNER", "ACL", "NO_PERMISSION", "DELETED", "EXPIRED"]
@@ -22,7 +23,9 @@ class MemoryRecord:
     memory_type: str
     sensitivity: str
     owner_character_instance_id: UUID | None
-
+    policy_version: str = "v1"
+    status: str = "CONFIRMED"
+    confidence: float = 1.0
 
 @dataclass(frozen=True, slots=True)
 class AccessDecision:
@@ -109,8 +112,12 @@ class SQLAlchemyMemoryRepository:
     grant for the requesting character, including the owner.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, policy_version: str = "v1") -> None:
         self.session = session
+        try:
+            self.policy_version = MemoryPolicyVersion(policy_version).value
+        except ValueError as exc:
+            raise ValueError("policy_version must be v1 or v2") from exc
 
     def retrieve(
         self,
@@ -133,6 +140,9 @@ class SQLAlchemyMemoryRepository:
                 )
                 .where(
                     MemoryItem.user_id == user_id,
+                    MemoryItem.policy_version == self.policy_version,
+                    MemoryItem.status == "CONFIRMED",
+                    or_(MemoryItem.valid_from.is_(None), MemoryItem.valid_from <= now),
                     # Restrict retrieval to this conversation plus explicit
                     # character seed memories (source_conversation_id IS NULL).
                     # ACL alone is insufficient because it would expose
@@ -147,6 +157,7 @@ class SQLAlchemyMemoryRepository:
                         MemoryItem.expires_at.is_(None),
                         MemoryItem.expires_at > now,
                     ),
+                    or_(MemoryItem.valid_to.is_(None), MemoryItem.valid_to > now),
                     MemoryACL.can_read.is_(True),
                 )
                 .order_by(MemoryItem.created_at.desc())
@@ -219,6 +230,7 @@ class SQLAlchemyMemoryRepository:
             content=content,
             sensitivity=sensitivity,
             source_conversation_id=source_conversation_id,
+            policy_version=self.policy_version,
         )
         self.session.add(item)
         self.session.flush()
@@ -386,4 +398,7 @@ class SQLAlchemyMemoryRepository:
             memory_type=item.memory_type,
             sensitivity=item.sensitivity,
             owner_character_instance_id=item.owner_character_instance_id,
+            policy_version=item.policy_version,
+            status=item.status,
+            confidence=float(item.confidence),
         )

@@ -26,6 +26,7 @@ from app.config import (
     get_typecast_voice_map,
 )
 from app.db.session import SessionLocal
+from app.memory.policy import get_memory_policy_version
 from app.providers.base import (
     ProviderConfigurationError,
     SceneDirectorProvider,
@@ -106,12 +107,14 @@ def get_conversation_service(
         development_user_external_id=get_development_user_external_id(),
         development_user_display_name=get_development_user_display_name(),
     )
-    memory_repository = SQLAlchemyMemoryRepository(session)
+    policy_version = get_memory_policy_version().value
+    memory_repository = SQLAlchemyMemoryRepository(session, policy_version=policy_version)
     return ConversationService(
         repository,
         scene_director,
         memory_repository,
-        SQLAlchemyGraphMemoryRepository(session),
+        SQLAlchemyGraphMemoryRepository(session, policy_version=policy_version),
+        policy_version,
     )
 
 
@@ -134,7 +137,7 @@ def get_memory_service(
         development_user_external_id=get_development_user_external_id(),
         development_user_display_name=get_development_user_display_name(),
     )
-    memory_repository = SQLAlchemyMemoryRepository(session)
+    memory_repository = SQLAlchemyMemoryRepository(session, policy_version=get_memory_policy_version().value)
     return MemoryService(character_repository, memory_repository)
 
 def get_scenario_service(

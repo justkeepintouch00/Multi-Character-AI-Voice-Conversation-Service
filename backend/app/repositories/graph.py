@@ -9,6 +9,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.db.models import MemoryACL, MemoryAccessLog, MemoryGraphEdge, MemoryItem
+from app.memory.policy import MemoryPolicyVersion
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,8 +61,12 @@ class SQLAlchemyGraphMemoryRepository:
     memory retrieval.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, policy_version: str = "v1") -> None:
         self.session = session
+        try:
+            self.policy_version = MemoryPolicyVersion(policy_version).value
+        except ValueError as exc:
+            raise ValueError("policy_version must be v1 or v2") from exc
 
     def create_edge(
         self,
@@ -81,6 +86,7 @@ class SQLAlchemyGraphMemoryRepository:
             relation=relation.strip(),
             target_entity=target_entity.strip(),
             summary=summary.strip() if summary else None,
+            policy_version=self.policy_version,
         )
         self.session.add(edge)
         self.session.commit()
@@ -121,6 +127,9 @@ class SQLAlchemyGraphMemoryRepository:
                 )
                 .where(
                     MemoryGraphEdge.user_id == user_id,
+                    MemoryGraphEdge.policy_version == self.policy_version,
+                    MemoryGraphEdge.status == "CONFIRMED",
+                    or_(MemoryGraphEdge.valid_from.is_(None), MemoryGraphEdge.valid_from <= now),
                     # Keep graph facts within the current conversation;
                     # ACL alone does not prevent cross-conversation leakage.
                     or_(
@@ -128,8 +137,11 @@ class SQLAlchemyGraphMemoryRepository:
                         MemoryItem.source_conversation_id == conversation_id,
                         MemoryItem.source_conversation_id.is_(None),
                     ),
+                    MemoryItem.policy_version == self.policy_version,
+                    MemoryItem.status == "CONFIRMED",
                     MemoryItem.deleted_at.is_(None),
                     or_(MemoryItem.expires_at.is_(None), MemoryItem.expires_at > now),
+                    or_(MemoryGraphEdge.valid_to.is_(None), MemoryGraphEdge.valid_to > now),
                     MemoryACL.can_read.is_(True),
                     or_(*matches),
                 )

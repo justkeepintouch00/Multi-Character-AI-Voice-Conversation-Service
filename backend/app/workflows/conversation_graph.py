@@ -106,6 +106,7 @@ class ConversationWorkflow:
                 "secondary_records": [],
                 "secondary_memory_context": [],
                 "share_suggestions": [],
+                "observation": RuntimeObservation(memory_schema_version=self.service.memory_policy_version).to_dict(),
             }
         )
         return result.get("turns", []), result.get("share_suggestions", [])
@@ -134,7 +135,7 @@ class ConversationWorkflow:
             "secondary_records": [],
             "secondary_memory_context": [],
             "share_suggestions": [],
-            "observation": RuntimeObservation(trace_id=get_trace_id()).to_dict(),
+            "observation": RuntimeObservation(trace_id=get_trace_id(), memory_schema_version=self.service.memory_policy_version).to_dict(),
         }
         state: dict[str, Any] = dict(initial)
         yield {"event": "workflow_started", "node": "workflow", "status": "started"}

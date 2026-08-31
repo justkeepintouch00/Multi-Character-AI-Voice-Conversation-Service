@@ -8,6 +8,7 @@ from time import perf_counter
 from uuid import UUID
 
 from app.observability import METRICS, log_event
+from app.memory.policy import MemoryPolicyVersion
 from app.providers.base import (
     ProviderRequestError,
     ProviderTimeoutError,
@@ -58,11 +59,16 @@ class ConversationService:
         scene_director: SceneDirectorProvider,
         memory_repository: MemoryRepository,
         graph_repository: GraphMemoryRepository | None = None,
+        memory_policy_version: str = "v1",
     ) -> None:
         self.repository = repository
         self.scene_director = scene_director
         self.memory_repository = memory_repository
         self.graph_repository = graph_repository
+        try:
+            self.memory_policy_version = MemoryPolicyVersion(memory_policy_version).value
+        except ValueError as exc:
+            raise ValueError("memory_policy_version must be v1 or v2") from exc
         self.memory_retriever = LangChainMemoryGraphRetriever(
             memory_repository, graph_repository
         )
@@ -495,7 +501,11 @@ class ConversationService:
         memory_record = self.memory_repository.create_memory(
             user_id=context.user_id,
             content=content,
-            memory_type="RELATIONSHIP",
+            memory_type=(
+                result.extracted_memory.memory_kind
+                if self.memory_policy_version == "v2"
+                else "RELATIONSHIP"
+            ),
             owner_character_instance_id=context.character_instance_ids[
                 owner_character_id
             ],
