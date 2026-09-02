@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Protocol
 
-from app.schemas.scene_plan import ScenePlan, ScenePlanRequest
+from app.schemas.speaker_turn import SpeakerTurnRequest, SpeakerTurnResult
 from app.schemas.speech import SpeechRequest
 
 
@@ -27,7 +27,21 @@ class ProviderInputError(ProviderError):
 
 
 class ProviderRequestError(ProviderError):
-    pass
+    """An upstream request failed, with safe diagnostic metadata when known."""
+
+    def __init__(
+        self,
+        provider: str,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+        retry_after: str | None = None,
+    ) -> None:
+        super().__init__(provider, message)
+        self.status_code = status_code
+        self.error_code = error_code
+        self.retry_after = retry_after
 
 
 class ProviderTimeoutError(ProviderError):
@@ -55,6 +69,12 @@ class TranscriptionResult:
     language: str
     duration_seconds: float | None = None
     segments: tuple[TranscriptionSegment, ...] = ()
+    model: str | None = None
+    fallback_used: bool = False
+    fallback_reason: str | None = None
+    primary_model: str | None = None
+    primary_text: str | None = None
+    primary_avg_logprob: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +84,9 @@ class AudioStream:
 
 
 class SceneDirectorProvider(Protocol):
-    async def create_scene_plan(self, request: ScenePlanRequest) -> ScenePlan: ...
+    async def create_speaker_turn(
+        self, request: SpeakerTurnRequest
+    ) -> SpeakerTurnResult: ...
 
 
 class STTProvider(Protocol):

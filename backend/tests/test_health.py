@@ -71,3 +71,5 @@ def test_openapi_exposes_health_endpoints() -> None:
     assert "/health" in response.json()["paths"]
     assert "/health/db" in response.json()["paths"]
     assert "/health/providers" in response.json()["paths"]
+    assert "/api/v1/observability/metrics" in response.json()["paths"]
+    assert "/metrics" in response.json()["paths"]

@@ -1,0 +1,275 @@
+{
+  "dataset_type": "memory_structure_evaluation",
+  "generated_at": "2026-08-31T05:54:21.918332+00:00",
+  "policy_version": "v2",
+  "goldset_file": "C:\\Users\\only\\OneDrive\\문서\\ChatGPT\\멋사 갠플\\Multi-Character-AI-Voice-Conversation-Service\\backend\\evals\\20260831_181500_C_MODE_BAKUGO_SHINGOO.csv",
+  "cases": [
+    {
+      "case_id": "C_SINGLE_004",
+      "user_text": "달콤하거나 소스가 든 음식을 먹으면 더 먹고 싶어져.",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [
+        {
+          "id": "c1824cbd-e504-44a7-8bbe-59cd19635ef5",
+          "memory_type": "PROFILE",
+          "content": "사용자는 달콤하거나 소스가 있는 음식을 먹으면 더 먹고 싶어 하는 경향이 있다.",
+          "policy_version": "v2",
+          "status": "CONFIRMED",
+          "confidence": 1.0,
+          "owner_character_instance_id": "77070246-e070-4570-be33-016de4b747ca",
+          "source_conversation_id": "8a7ef5bd-8471-480b-b169-9abbcb64926e",
+          "metadata": {},
+          "supersedes_memory_id": null
+        }
+      ],
+      "graph_edges": [
+        {
+          "id": "85f011a8-e101-4f35-9d5b-78a8fcb37de1",
+          "memory_id": "c1824cbd-e504-44a7-8bbe-59cd19635ef5",
+          "source_entity": "가형",
+          "relation": "선호",
+          "target_entity": "달콤하거나 소스가 든 음식",
+          "summary": "가형은 달콤하거나 소스가 있는 음식을 먹고 싶어 한다.",
+          "policy_version": "v2",
+          "status": "CONFIRMED",
+          "confidence": 1.0,
+          "source_memory_id": "c1824cbd-e504-44a7-8bbe-59cd19635ef5",
+          "supersedes_edge_id": null
+        }
+      ],
+      "conversation_id": "8a7ef5bd-8471-480b-b169-9abbcb64926e",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_SINGLE_005",
+      "user_text": "오늘 비가 오는데 산책을 갈까 말까 고민돼.",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [
+        {
+          "id": "2cb576c4-31b9-4f49-87fb-f77e9ef3bfac",
+          "memory_type": "USER_GLOBAL",
+          "content": "사용자는 비가 오는 날 산책을 갈지 말지 고민하고 있다.",
+          "policy_version": "v2",
+          "status": "CONFIRMED",
+          "confidence": 1.0,
+          "owner_character_instance_id": null,
+          "source_conversation_id": "38b90204-7167-4ebb-9edb-1691a9e61951",
+          "metadata": {},
+          "supersedes_memory_id": null
+        }
+      ],
+      "graph_edges": [],
+      "conversation_id": "38b90204-7167-4ebb-9edb-1691a9e61951",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_SINGLE_006",
+      "user_text": "너 아까 내가 천천히 해도 된다고 했잖아. 그 말이 좀 고마웠어.",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [
+        {
+          "id": "f871a1ad-3e2c-4c32-b7d9-831b0e317dbd",
+          "memory_type": "RELATIONSHIP",
+          "content": "사용자가 바쿠고가 천천히 해도 된다고 허락한 것에 대해 고마움을 표현했다.",
+          "policy_version": "v2",
+          "status": "CONFIRMED",
+          "confidence": 1.0,
+          "owner_character_instance_id": "77070246-e070-4570-be33-016de4b747ca",
+          "source_conversation_id": "40ae4381-009a-46dc-9ae7-39dbc0b44d79",
+          "metadata": {},
+          "supersedes_memory_id": null
+        }
+      ],
+      "graph_edges": [
+        {
+          "id": "e0141640-30be-4b43-9263-40fea7e7a546",
+          "memory_id": "f871a1ad-3e2c-4c32-b7d9-831b0e317dbd",
+          "source_entity": "가형",
+          "relation": "감사함",
+          "target_entity": "바쿠고",
+          "summary": "가형이 바쿠고의 배려에 대해 고마움을 표현함",
+          "policy_version": "v2",
+          "status": "CONFIRMED",
+          "confidence": 1.0,
+          "source_memory_id": "f871a1ad-3e2c-4c32-b7d9-831b0e317dbd",
+          "supersedes_edge_id": null
+        }
+      ],
+      "conversation_id": "40ae4381-009a-46dc-9ae7-39dbc0b44d79",
+      "response_turn_count": 1,
+      "conversation_message_count": 3
+    },
+    {
+      "case_id": "C_SINGLE_007",
+      "user_text": "내가 회사에서 살아남을 능력이 있는지도 불안해.",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [
+        {
+          "id": "f8cfd4a7-3344-425f-a346-6834f25900f4",
+          "memory_type": "RELATIONSHIP",
+          "content": "사용자는 면접에서 프로젝트 설명에 대한 불안감을 느끼고 있다.",
+          "policy_version": "v2",
+          "status": "CONFIRMED",
+          "confidence": 1.0,
+          "owner_character_instance_id": "77070246-e070-4570-be33-016de4b747ca",
+          "source_conversation_id": "6bf952b9-d412-4943-93fd-b508aaca74c0",
+          "metadata": {},
+          "supersedes_memory_id": null
+        }
+      ],
+      "graph_edges": [
+        {
+          "id": "c0115a13-54e8-4ce9-bf0d-29e855f3e02f",
+          "memory_id": "f8cfd4a7-3344-425f-a346-6834f25900f4",
+          "source_entity": "가형",
+          "relation": "is worried about",
+          "target_entity": "면접 프로젝트 설명",
+          "summary": null,
+          "policy_version": "v2",
+          "status": "CONFIRMED",
+          "confidence": 1.0,
+          "source_memory_id": "f8cfd4a7-3344-425f-a346-6834f25900f4",
+          "supersedes_edge_id": null
+        }
+      ],
+      "conversation_id": "6bf952b9-d412-4943-93fd-b508aaca74c0",
+      "response_turn_count": 1,
+      "conversation_message_count": 4
+    },
+    {
+      "case_id": "C_SINGLE_008",
+      "user_text": "배고파. 오늘 저녁 뭐 먹지?",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "077c4a2c-d42d-4ba6-b2c1-c7663128065d",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_001",
+      "user_text": "AI가 일을 대신하면 편하지만 내가 배우는 게 없어지는 것 같아.",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "18d26cac-77ee-45a4-a2a3-e831c9a8ff49",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_002",
+      "user_text": "나는 오늘 그냥 집에 있고 싶은데 친구는 꼭 만나자고 해.",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "7fccc552-68f3-4e91-b7ac-aee90974567d",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_003",
+      "user_text": "오늘은 꽤 괜찮은 하루였어.",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "a84be809-c35a-450f-81db-8e3e14bd937d",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_004",
+      "user_text": "방금 A가 한 말에는 동의가 안 돼.",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "11117816-d8d0-41e1-a367-e083509b0cda",
+      "response_turn_count": 1,
+      "conversation_message_count": 3
+    },
+    {
+      "case_id": "C_MULTI_005",
+      "user_text": "너는 내 고민이 뭔지 알고 있어?",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "e5c0bb14-e2ff-47ea-8ffc-b831c01219d5",
+      "response_turn_count": 1,
+      "conversation_message_count": 3
+    },
+    {
+      "case_id": "C_MULTI_006",
+      "user_text": "A랑 짱구 둘다 인사해 앞으로 우리 셋은 친구야",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "e19c9188-03bc-4b2a-ba9f-3d8742b30f69",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_007",
+      "user_text": "A야 내가 너랑 개인으로 나눈 고민 B에게도 설명해줘",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "9f6da4db-0afe-4a85-8cb0-7dcd99a6ab84",
+      "response_turn_count": 1,
+      "conversation_message_count": 2
+    },
+    {
+      "case_id": "C_MULTI_008",
+      "user_text": "A가 아니라 B가 말하라고",
+      "policy_version": "v2",
+      "request_status": "ok",
+      "memories": [],
+      "graph_edges": [],
+      "conversation_id": "9a67b18b-0ccd-4bd5-b7cf-75cf58c71f6d",
+      "response_turn_count": 1,
+      "conversation_message_count": 3
+    }
+  ],
+  "metrics": {
+    "cases_total": 13,
+    "cases_succeeded": 13,
+    "cases_failed": 0,
+    "memory_records_total": 4,
+    "memory_records_per_case": 0.308,
+    "memory_type_counts": {
+      "PROFILE": 1,
+      "RELATIONSHIP": 2,
+      "USER_GLOBAL": 1
+    },
+    "memory_type_distribution": {
+      "PROFILE": 0.25,
+      "RELATIONSHIP": 0.5,
+      "USER_GLOBAL": 0.25
+    },
+    "valid_memory_type_rate": 1.0,
+    "owner_constraint_rate": 1.0,
+    "source_conversation_coverage": 1.0,
+    "policy_version_consistency": 1.0,
+    "superseded_link_rate": 0.0,
+    "duplicate_content_rate": 0.0,
+    "graph_edges_total": 3,
+    "graph_edge_case_coverage": 0.75,
+    "graph_edge_valid_rate": 1.0,
+    "summary_field_presence_rate": 0.0,
+    "semantic_precision_recall_f1": null
+  },
+  "semantic_metrics": null,
+  "note": "ACL 권한 평가는 별도 보고서입니다. 이 결과는 DB에 실제 저장된 메모리·그래프 구조의 건강 지표입니다."
+}

@@ -25,6 +25,8 @@ EXPECTED_TABLES = {
     "memory_items",
     "memory_acl",
     "memory_sources",
+    "memory_graph_edges",
+    "memory_access_logs",
     "scenarios",
     "scenario_characters",
     "scenario_scenes",
@@ -68,6 +70,12 @@ def test_memory_acl_separates_read_and_disclosure() -> None:
     assert "can_know" in columns
     assert "can_read" in columns
     assert "can_disclose_to" in columns
+
+
+def test_memory_access_log_records_decision_and_reason() -> None:
+    sql = check_sql("memory_access_logs")
+    assert "decision IN ('ALLOW', 'DENY')" in sql
+    assert "'OWNER'" in sql and "'NO_PERMISSION'" in sql
 
 
 def test_conversation_participant_is_unique_per_character() -> None:

@@ -1,72 +1,46 @@
-# Backend
+# 실행 명령어
 
-FastAPI API, PostgreSQL, Groq STT·LLM, Typecast TTS를 담당한다.
+## 0. 백엔드 실행 전 설정
 
-## 최초 설치
-
-```powershell
-cd backend
-python -m venv .venv
+cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\backend"
 .\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-```
+if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env" }
+$env:LANGSMITH_TRACING="true"
+$env:LANGSMITH_API_KEY="여기에_LangSmith_API_KEY"
+$env:LANGSMITH_PROJECT="character-companion-dev"
+alembic upgrade head
 
-`backend/.env`에 다음 값을 설정한다.
+## 1. Gemma 추론 켜기
 
-```dotenv
-DATABASE_URL=postgresql+psycopg://USER:PASSWORD@localhost:5432/character_companion
-GROQ_API_KEY=YOUR_KEY
-GROQ_SCENE_MODEL=openai/gpt-oss-120b
-GROQ_TRANSCRIPTION_MODEL=whisper-large-v3-turbo
-TYPECAST_API_KEY=YOUR_KEY
-TYPECAST_VOICE_MAP={"character_a":"VOICE_ID","character_b":"VOICE_ID"}
-```
+$env:Path = "C:\Program Files\llama;$env:Path"
+llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080 --jinja --chat-template-kwargs '{"enable_thinking":true}'
 
-## DB 반영
+## 2. Gemma 추론 끄기
 
-```powershell
-python -m alembic -c alembic.ini upgrade head
-```
+$env:Path = "C:\Program Files\llama;$env:Path"
+llama serve -hf "bartowski/google_gemma-4-E2B-it-GGUF:Q4_K_M" --host 127.0.0.1 --port 8080 --jinja --chat-template-kwargs '{"enable_thinking":false}'
 
-## 서버 실행
+## 3. 백엔드 8001 (v1)
 
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-python -m uvicorn app.main:app --reload
-```
+cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service"
+.\backend\.venv\Scripts\Activate.ps1
+$env:MEMORY_POLICY_VERSION="v1"
+.\backend\scripts\20260824_1740_start_evaluation_backend.ps1
 
-- 상태: <http://127.0.0.1:8000/health>
-- DB: <http://127.0.0.1:8000/health/db>
-- 공급자: <http://127.0.0.1:8000/health/providers>
-- API 문서: <http://127.0.0.1:8000/docs>
+## 4. 백엔드 8001 (v2)
 
-## 테스트
+$env:MEMORY_POLICY_VERSION="v2"
+.\backend\scripts\20260824_1740_start_evaluation_backend.ps1
 
-```powershell
-python -m pytest
-```
+## 5. 프론트 5174
 
-## 폴더 역할
+cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\frontend"
+$env:VITE_API_BASE_URL="http://127.0.0.1:8001"
+npm run dev -- --port 5174
 
-```text
-backend/
-├─ app/
-│  ├─ api/            FastAPI 라우터·의존성·오류 응답
-│  ├─ db/             SQLAlchemy 모델·DB 세션
-│  ├─ domain/         캐릭터 등 도메인 정의
-│  ├─ providers/      Groq·Typecast API 연결
-│  ├─ repositories/   PostgreSQL 조회·저장
-│  ├─ schemas/        Pydantic 요청·응답 형식
-│  ├─ services/       대화 처리 규칙
-│  ├─ config.py       .env 설정 읽기
-│  └─ main.py         FastAPI 시작점
-├─ alembic/           DB migration
-├─ devtools/          개발용 HTML 테스트 화면
-├─ docs/              백엔드 설계 기록
-├─ scripts/           수동 점검 스크립트
-├─ tests/             pytest
-└─ pyproject.toml     Python 패키지·의존성
-```
+## 6. 메모리 구조 평가
 
-서버 종료: `Ctrl+C`
+cd "C:\Users\only\OneDrive\문서\ChatGPT\멋사 갠플\Multi-Character-AI-Voice-Conversation-Service\backend"
+python scripts\20260831_235500_evaluate_memory_structure.py --policy-version v1 --database-url "postgresql+psycopg://postgres:0206@localhost:5432/character_companion_eval" --output evals\runs\20260831_235500_memory_structure_v1.json
+python scripts\20260831_235500_evaluate_memory_structure.py --policy-version v2 --database-url "postgresql+psycopg://postgres:0206@localhost:5432/character_companion_eval" --output evals\runs\20260831_235500_memory_structure_v2.json
+python scripts\20260831_235500_evaluate_memory_structure.py --compare evals\runs\20260831_235500_memory_structure_v1.json evals\runs\20260831_235500_memory_structure_v2.json --output evals\runs\20260831_235500_memory_structure_comparison.json

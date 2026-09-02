@@ -6,10 +6,10 @@ from typing import Any
 import httpx
 from pydantic import ValidationError
 
-from app.domain.characters import DEVELOPMENT_CHARACTERS
+from app.observability import METRICS, log_event, record_llm_usage
+from app.observability.langsmith import finish_trace, trace_llm_call
 from app.providers.base import (
     ProviderConfigurationError,
-    ProviderInputError,
     ProviderRequestError,
     ProviderResponseError,
     ProviderTimeoutError,
@@ -17,20 +17,91 @@ from app.providers.base import (
     TranscriptionSegment,
 )
 from app.providers.scene_director import (
-    SCENE_DIRECTOR_INSTRUCTIONS,
-    scene_plan_schema,
+    PRIMARY_SPEAKER_INSTRUCTIONS,
+    SECONDARY_SPEAKER_INSTRUCTIONS,
 )
-from app.schemas.scene_plan import ScenePlan, ScenePlanRequest
+from app.schemas.speaker_turn import SpeakerTurnRequest, SpeakerTurnResult
 
 
-# Groq currently guarantees strict JSON Schema output for these production models.
-# Other models use JSON Object Mode and are validated by Pydantic below.
-STRICT_STRUCTURED_OUTPUT_MODELS = {
-    "openai/gpt-oss-20b",
-    "openai/gpt-oss-120b",
-}
+# GPT-OSS on Groq can return HTTP 400 while compiling this project's nested,
+# dynamic schema (notably the per-request memory-id enum). JSON Object Mode is
+# provider-compatible; Pydantic validation and bounded retry below remain the
+# contract that enforces the exact speaker-turn shape.
+KOREAN_TRANSCRIPTION_PROMPT = (
+    "GPT, 프로젝트, 면접, 회사, 인공지능에 관한 개인적인 고민을 말하는 "
+    "한국어 1인칭 일상 대화입니다. 발화를 한국어 그대로 받아쓰고, "
+    "영어로 번역하거나 내용을 요약·각색하지 마세요."
+)
 
 
+def _upstream_error(response: httpx.Response, operation: str) -> ProviderRequestError:
+    error_code: str | None = None
+    error_message: str | None = None
+    try:
+        payload = response.json()
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            if error.get("code") is not None:
+                error_code = str(error["code"])
+            if error.get("message") is not None:
+                error_message = str(error["message"])
+            # Groq returns failed_generation for malformed JSON. Keep the
+            # diagnostic short so it helps local debugging without returning
+            # an unbounded provider payload to the browser.
+            failed_generation = error.get("failed_generation")
+            if failed_generation is not None:
+                detail = json.dumps(failed_generation, ensure_ascii=False)[:600]
+                error_message = f"{error_message or 'Generation failed'} ({detail})"
+
+    message = f"{operation} upstream returned HTTP {response.status_code}"
+    if error_message:
+        message = f"{message}: {error_message}"
+    return ProviderRequestError(
+        "groq",
+        message,
+        status_code=response.status_code,
+        error_code=error_code,
+        retry_after=response.headers.get("retry-after"),
+    )
+
+
+
+def _flat_groq_turn_schema(
+    *, role: str, speaker_id: str, other_participant_ids: list[str]
+) -> dict[str, Any]:
+    """Small, flat contract Groq can enforce reliably for one dialogue turn."""
+    emotions = [
+        "neutral", "calm", "concern", "happy", "sad", "angry",
+        "whisper", "encouraging", "serious",
+    ]
+    properties: dict[str, Any] = {
+        "speaker_id": {"type": "string", "enum": [speaker_id]},
+        "to": {"type": "string", "enum": ["USER", *other_participant_ids]},
+        "emotion": {"type": "string", "enum": emotions},
+        "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "한국어로 말하는 자연스러운 한두 문장 대사",
+        },
+    }
+    required = ["speaker_id", "to", "emotion", "text"]
+    if role == "PRIMARY":
+        properties["needs_second_speaker"] = {"type": "boolean"}
+        properties["second_speaker_reason"] = {
+            "type": "string",
+            "enum": ["NONE", "DIFFERING_VIEWPOINT", "AGREEMENT_BACKUP"],
+        }
+        required.extend(["needs_second_speaker", "second_speaker_reason"])
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": False,
+    }
 def _extract_chat_content(payload: dict[str, Any]) -> str:
     try:
         content = payload["choices"][0]["message"]["content"]
@@ -44,6 +115,8 @@ def _extract_chat_content(payload: dict[str, Any]) -> str:
 
 
 class GroqSceneDirector:
+    provider_name = "groq"
+
     def __init__(
         self,
         *,
@@ -59,44 +132,79 @@ class GroqSceneDirector:
         self.max_attempts = min(max(max_attempts, 1), 3)
         self.transport = transport
 
-    async def create_scene_plan(self, request: ScenePlanRequest) -> ScenePlan:
-        unknown_ids = set(request.character_ids) - set(DEVELOPMENT_CHARACTERS)
-        if unknown_ids:
-            raise ProviderInputError("groq", "Unknown character_id")
+    async def create_speaker_turn(
+        self, request: SpeakerTurnRequest
+    ) -> SpeakerTurnResult:
         if not self.api_key:
             raise ProviderConfigurationError("groq", "GROQ_API_KEY is not configured")
 
-        schema = scene_plan_schema(request.character_ids)
+        other_participant_ids = [
+            character.id for character in request.other_participants
+        ]
+        memory_context_ids = [item.id for item in request.memory_context]
+        if request.role == "PRIMARY":
+            instructions = PRIMARY_SPEAKER_INSTRUCTIONS
+            output_contract: dict[str, Any] = {
+                "required_keys": {
+                    "speaker_id": request.speaker.id,
+                    "to": ["USER", *other_participant_ids],
+                    "emotion": ["neutral", "calm", "concern", "happy", "sad", "angry", "whisper", "encouraging", "serious"],
+                    "text": "사용자에게 말하는 짧은 한국어 대사",
+                    "needs_second_speaker": "boolean",
+                    "second_speaker_reason": ["NONE", "DIFFERING_VIEWPOINT", "AGREEMENT_BACKUP"],
+                },
+                "optional_keys": ["extracted_memory", "disclosed_memory_ids"],
+            }
+        else:
+            instructions = SECONDARY_SPEAKER_INSTRUCTIONS
+            output_contract = {
+                "required_keys": {
+                    "speaker_id": request.speaker.id,
+                    "to": ["USER", *other_participant_ids],
+                    "emotion": ["neutral", "calm", "concern", "happy", "sad", "angry", "whisper", "encouraging", "serious"],
+                    "text": "사용자에게 말하는 짧은 한국어 대사",
+                },
+                "optional_keys": ["extracted_memory", "disclosed_memory_ids"],
+            }
         input_payload = {
             "user_text": request.user_text,
-            "characters": [
-                {
-                    "id": character_id,
-                    "name": DEVELOPMENT_CHARACTERS[character_id].name,
-                    "persona": DEVELOPMENT_CHARACTERS[character_id].persona,
-                }
-                for character_id in request.character_ids
+            "user_display_name": request.user_display_name,
+            "speaker": request.speaker.model_dump(mode="json"),
+            "other_participants": [
+                character.model_dump(mode="json")
+                for character in request.other_participants
             ],
             "recent_messages": [
                 message.model_dump(mode="json") for message in request.recent_messages
             ],
-            "required_output_schema": schema,
+            "memory_context": [
+                item.model_dump(mode="json") for item in request.memory_context
+            ],
+            "turn_instruction": request.turn_instruction,
+            "output_contract": output_contract,
         }
         messages: list[dict[str, str]] = [
-            {"role": "system", "content": SCENE_DIRECTOR_INSTRUCTIONS},
+            {"role": "system", "content": instructions},
             {
                 "role": "user",
                 "content": json.dumps(input_payload, ensure_ascii=False),
             },
         ]
+        # GPT-OSS accepts strict structured output. Keep it flat: nested dynamic
+        # schemas were the source of Groq HTTP 400 generation failures.
+        is_gpt_oss = self.model.startswith("openai/gpt-oss-")
         response_format: dict[str, Any]
-        if self.model in STRICT_STRUCTURED_OUTPUT_MODELS:
+        if is_gpt_oss:
             response_format = {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "scene_plan",
+                    "name": "speaker_turn",
                     "strict": True,
-                    "schema": schema,
+                    "schema": _flat_groq_turn_schema(
+                        role=request.role,
+                        speaker_id=request.speaker.id,
+                        other_participant_ids=other_participant_ids,
+                    ),
                 },
             }
         else:
@@ -109,33 +217,70 @@ class GroqSceneDirector:
                 "messages": messages,
                 "response_format": response_format,
                 "temperature": 0.2,
-                "max_completion_tokens": 1200,
+                # GPT-OSS defaults to medium reasoning. A short character turn
+                # should reserve generation budget for the required JSON object.
+                "reasoning_effort": "low",
+                "include_reasoning": False,
+                "max_completion_tokens": 600,
                 "stream": False,
             }
             response_payload = await self._request(payload)
+            record_llm_usage(
+                self.provider_name, self.model, response_payload.get("usage")
+            )
             try:
                 output_text = _extract_chat_content(response_payload)
-                plan = ScenePlan.model_validate_json(output_text)
-                plan.validate_speakers(set(request.character_ids))
-                return plan
+                turn = SpeakerTurnResult.model_validate_json(output_text)
+                turn.validate_speaker(request.speaker.id)
+                return turn
             except (json.JSONDecodeError, ValidationError, ValueError) as exc:
                 last_validation_error = exc
                 if attempt < self.max_attempts:
+                    METRICS.increment(
+                        "llm_retries_total",
+                        provider=self.provider_name,
+                        model=self.model,
+                        reason="invalid_structured_output",
+                    )
+                    log_event(
+                        "llm_retry",
+                        provider=self.provider_name,
+                        model=self.model,
+                        reason="invalid_structured_output",
+                        attempt=attempt + 1,
+                    )
                     messages.append(
                         {
                             "role": "user",
                             "content": (
-                                "직전 출력이 required_output_schema 검증에 실패했다. "
+                                "직전 출력이 output_contract 검증에 실패했다. "
                                 "스키마에 맞는 JSON 객체만 다시 출력하라."
                             ),
                         }
                     )
 
         raise ProviderResponseError(
-            "groq", "Scene Director returned an invalid scene plan"
+            "groq", "Scene Director returned an invalid speaker turn"
         ) from last_validation_error
 
     async def _request(self, payload: dict[str, Any]) -> dict[str, Any]:
+        messages = payload.get("messages", [])
+        with trace_llm_call(
+            name="Groq Scene Director",
+            model=self.model,
+            messages=messages if isinstance(messages, list) else [],
+            metadata={"provider": self.provider_name},
+            tags=["scene-director", self.provider_name],
+        ) as trace_run:
+            try:
+                response_payload = await self._request_http(payload)
+            except Exception as exc:
+                finish_trace(trace_run, outputs={"error": type(exc).__name__})
+                raise
+            finish_trace(trace_run, outputs={"response": response_payload})
+            return response_payload
+
+    async def _request_http(self, payload: dict[str, Any]) -> dict[str, Any]:
         try:
             async with httpx.AsyncClient(
                 transport=self.transport,
@@ -152,10 +297,7 @@ class GroqSceneDirector:
             raise ProviderRequestError("groq", "Scene Director request failed") from exc
 
         if response.is_error:
-            raise ProviderRequestError(
-                "groq",
-                f"Scene Director upstream returned HTTP {response.status_code}",
-            )
+            raise _upstream_error(response, "Scene Director")
         try:
             payload = response.json()
         except json.JSONDecodeError as exc:
@@ -176,11 +318,15 @@ class GroqTranscriptionProvider:
         api_key: str | None,
         base_url: str,
         model: str,
+        fallback_model: str | None = None,
+        fallback_avg_logprob_threshold: float = -0.25,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.fallback_model = fallback_model
+        self.fallback_avg_logprob_threshold = fallback_avg_logprob_threshold
         self.transport = transport
 
     async def transcribe(
@@ -194,6 +340,55 @@ class GroqTranscriptionProvider:
         if not self.api_key:
             raise ProviderConfigurationError("groq", "GROQ_API_KEY is not configured")
 
+        primary_result = await self._transcribe_once(
+            filename=filename,
+            content=content,
+            content_type=content_type,
+            language=language,
+            model=self.model,
+        )
+        primary_avg_logprob = _average_segment_logprob(primary_result.segments)
+        low_confidence = (
+            primary_avg_logprob is not None
+            and primary_avg_logprob < self.fallback_avg_logprob_threshold
+        )
+        should_retry = (
+            self.fallback_model is not None
+            and self.fallback_model != self.model
+            and low_confidence
+        )
+        if not should_retry:
+            return primary_result
+
+        fallback_result = await self._transcribe_once(
+            filename=filename,
+            content=content,
+            content_type=content_type,
+            language=language,
+            model=self.fallback_model,
+        )
+        return TranscriptionResult(
+            text=fallback_result.text,
+            language=fallback_result.language,
+            duration_seconds=fallback_result.duration_seconds,
+            segments=fallback_result.segments,
+            model=fallback_result.model,
+            fallback_used=True,
+            fallback_reason="low_avg_logprob",
+            primary_model=self.model,
+            primary_text=primary_result.text,
+            primary_avg_logprob=primary_avg_logprob,
+        )
+
+    async def _transcribe_once(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str,
+        language: str,
+        model: str,
+    ) -> TranscriptionResult:
         try:
             async with httpx.AsyncClient(
                 transport=self.transport,
@@ -204,8 +399,13 @@ class GroqTranscriptionProvider:
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     files={"file": (filename, content, content_type)},
                     data={
-                        "model": self.model,
+                        "model": model,
                         "language": language,
+                        "prompt": (
+                            KOREAN_TRANSCRIPTION_PROMPT
+                            if language.lower() == "ko"
+                            else "Natural conversational speech."
+                        ),
                         "response_format": "verbose_json",
                         "temperature": "0",
                     },
@@ -216,10 +416,7 @@ class GroqTranscriptionProvider:
             raise ProviderRequestError("groq", "Transcription request failed") from exc
 
         if response.is_error:
-            raise ProviderRequestError(
-                "groq",
-                f"Transcription upstream returned HTTP {response.status_code}",
-            )
+            raise _upstream_error(response, "Transcription")
         try:
             payload = response.json()
             text = payload["text"].strip()
@@ -266,6 +463,7 @@ class GroqTranscriptionProvider:
             language=language,
             duration_seconds=duration_seconds,
             segments=tuple(segments),
+            model=model,
         )
 
 
@@ -273,3 +471,19 @@ def _optional_float(value: object) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+def _average_segment_logprob(
+    segments: tuple[TranscriptionSegment, ...],
+) -> float | None:
+    values = [
+        segment.avg_logprob
+        for segment in segments
+        if segment.avg_logprob is not None
+    ]
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+

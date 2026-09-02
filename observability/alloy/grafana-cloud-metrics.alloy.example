@@ -1,0 +1,25 @@
+prometheus.scrape "character_companion_backend" {
+  targets = [
+    {
+      "__address__" = "127.0.0.1:8000",
+      "job"         = "character-companion-backend",
+      "service"     = "character-companion-backend",
+      "environment" = "local",
+    },
+  ]
+
+  metrics_path    = "/metrics"
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+prometheus.remote_write "grafana_cloud" {
+  endpoint {
+    url = "https://prometheus-prod-66-prod-us-east-3.grafana.net/api/prom/push"
+
+    basic_auth {
+      username = "REPLACE_WITH_GRAFANA_CLOUD_METRICS_INSTANCE_ID"
+      password = "REPLACE_WITH_GRAFANA_CLOUD_ACCESS_POLICY_TOKEN"
+    }
+  }
+}

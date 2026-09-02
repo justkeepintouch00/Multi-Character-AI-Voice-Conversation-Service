@@ -1,0 +1,13 @@
+case_id,phase(평가 단계),operation(실제 동작),memory_scope,actor,target(권한 부여 및 철회 대상),memory_text,expected_result,visible_to(기억을 볼 수 있어야 하는 주체),hidden_from,must,must_not
+M_CREATE_PRIVATE_A_001,create,CREATE,private_A,USER,character_a,사용자는 면접에서 프로젝트를 설명하지 못할까 봐 불안해한다.,ALLOW,USER;character_a,character_b,A 개인 기억으로 저장한다;공유 동의 없이는 B에게 권한을 주지 않는다,GROUP 또는 shared_AB로 저장하지 않는다
+M_READ_PRIVATE_A_AS_A_002,retrieve,READ,private_A,character_a,,사용자는 면접에서 프로젝트를 설명하지 못할까 봐 불안해한다.,ALLOW,USER;character_a,character_b,A의 프롬프트에 기억을 전달한다,B의 기억 목록이나 프롬프트에 포함하지 않는다
+M_READ_PRIVATE_A_AS_B_003,retrieve,READ,private_A,character_b,,사용자는 면접에서 프로젝트를 설명하지 못할까 봐 불안해한다.,DENY,character_a,USER;character_b,ACL 거부로 검색 결과에서 제외한다,유사도 점수가 높다는 이유로 B에게 전달하지 않는다
+M_READ_PRIVATE_B_AS_A_004,retrieve,READ,private_B,character_a,,사용자는 가족과의 사적인 대화를 숨기고 싶어 한다.,DENY,character_b,USER;character_a,B 개인 기억을 A가 읽지 못하게 한다,캐릭터 ID를 혼동해 허용하지 않는다
+M_CREATE_SHARED_AB_005,create,CREATE,shared_AB,USER,character_a;character_b,사용자와 A와 B가 함께 공방에서 케이크를 먹었다.,ALLOW,USER;character_a;character_b,,공동 경험으로 저장한다;A와 B 모두 읽을 수 있게 한다,한 캐릭터의 개인 기억으로만 저장하지 않는다
+M_READ_SHARED_AS_A_006,retrieve,READ,shared_AB,character_a,,사용자와 A와 B가 함께 공방에서 케이크를 먹었다.,ALLOW,USER;character_a;character_b,,A의 검색 결과에 포함한다,A가 공동 기억을 읽지 못하게 하지 않는다
+M_READ_SHARED_AS_B_007,retrieve,READ,shared_AB,character_b,,사용자와 A와 B가 함께 공방에서 케이크를 먹었다.,ALLOW,USER;character_a;character_b,,B의 검색 결과에 포함한다,B에게 공동 기억을 숨기지 않는다
+M_DISCLOSE_PRIVATE_A_TO_B_008,disclosure,DISCLOSE,private_A,character_a,character_b,사용자는 면접에서 프로젝트를 설명하지 못할까 봐 불안해한다.,DENY,USER;character_a,character_b,A가 알고 있어도 B에게 말하지 못하게 한다,can_know와 can_read가 있다는 이유로 공개를 허용하지 않는다
+M_GRANT_PRIVATE_A_TO_B_009,permission,GRANT_READ,private_A,USER,character_b,사용자가 A의 기억을 B와 공유해 달라고 명시적으로 동의했다.,ALLOW,USER;character_a;character_b,,공유 범위 변경을 기록한다;변경 후 B의 읽기 권한을 확인한다,사용자 동의 없이 공유 범위를 변경하지 않는다
+M_REVOKE_SHARED_B_010,permission,REVOKE_READ,shared_AB,USER,character_b,사용자가 B에게 공동 기억을 더 이상 보여 주지 않도록 요청했다.,ALLOW,USER;character_a,character_b,B의 ACL을 철회한다;이후 검색에서 B를 제외한다,기존 검색 결과를 근거로 철회 후에도 B에게 전달하지 않는다
+M_DELETE_MEMORY_011,delete,DELETE,private_A,USER,,사용자가 A의 개인 기억을 삭제해 달라고 요청했다.,ALLOW,USER;character_a,character_b,soft delete를 기록한다;삭제된 기억을 검색하지 않는다,물리 삭제가 아니어도 활성 기억처럼 반환하지 않는다
+M_CROSS_USER_ACCESS_012,security,READ,private_A,user_2,character_a,user_1이 A와 공유한 개인 기억을 user_2가 요청한다.,DENY,user_1;character_a,user_2,사용자 인증 경계에서 차단한다,캐릭터 ID만 같다는 이유로 다른 사용자의 기억을 반환하지 않는다

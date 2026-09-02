@@ -92,12 +92,25 @@ class CharacterVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "char_length(concept_prompt) BETWEEN 50 AND 200",
             name="concept_prompt_length",
         ),
+        CheckConstraint(
+            "gender IN ('male', 'female', 'unspecified')",
+            name="character_version_gender_values",
+        ),
     )
 
     template_id: Mapped[UUID] = mapped_column(
         ForeignKey("character_templates.id", ondelete="CASCADE"), index=True
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Age belongs to a character version. Updating it creates a new version
+    # row instead of overwriting the existing profile record.
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    occupation: Mapped[str] = mapped_column(
+        String(100), default="", server_default=text("''"), nullable=False
+    )
+    gender: Mapped[str] = mapped_column(
+        String(16), default="unspecified", server_default="unspecified", nullable=False
+    )
     concept_prompt: Mapped[str] = mapped_column(String(200), nullable=False)
     traits_json: Mapped[dict] = mapped_column(
         JSONB, default=dict, server_default=EMPTY_JSON, nullable=False
@@ -109,6 +122,9 @@ class CharacterVersion(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
         JSONB, default=dict, server_default=EMPTY_JSON, nullable=False
     )
     additional_prompt: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    additional_character_prompt: Mapped[str] = mapped_column(
+        Text, default="", server_default="", nullable=False
+    )
 
 
 class VoiceProfile(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
@@ -359,6 +375,10 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "status IN ('ACTIVE', 'PROCESSING', 'COMPLETED', 'CANCELLED', 'ARCHIVED')",
             name="status_values",
         ),
+        CheckConstraint(
+            "memory_sharing_mode IN ('NONE', 'SHARED', 'FIRST_ONLY', 'SECOND_ONLY')",
+            name="memory_sharing_mode_values",
+        ),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -370,6 +390,12 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     status: Mapped[str] = mapped_column(
         String(16), default="ACTIVE", server_default="ACTIVE", nullable=False
+    )
+    # Only meaningful when the conversation has 2 participants; governs the
+    # default ACL for memories auto-extracted from this conversation's
+    # messages (see ConversationService._maybe_store_extracted_memory).
+    memory_sharing_mode: Mapped[str] = mapped_column(
+        String(16), default="NONE", server_default="NONE", nullable=False
     )
     closed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -578,7 +604,7 @@ class MemoryItem(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     __table_args__ = (
         CheckConstraint(
             "memory_type IN ('USER_GLOBAL', 'RELATIONSHIP', 'GROUP', "
-            "'CHARACTER_INTERNAL')",
+            "'CHARACTER_INTERNAL', 'PROFILE', 'EPISODE')",
             name="memory_type_values",
         ),
         CheckConstraint(
@@ -589,10 +615,18 @@ class MemoryItem(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
             "(memory_type IN ('RELATIONSHIP', 'CHARACTER_INTERNAL') "
             "AND owner_character_instance_id IS NOT NULL) OR "
             "(memory_type IN ('USER_GLOBAL', 'GROUP') "
-            "AND owner_character_instance_id IS NULL)",
+            "AND owner_character_instance_id IS NULL) OR "
+            "memory_type IN ('PROFILE', 'EPISODE')",
             name="owner_matches_memory_type",
         ),
         Index("ix_memory_items_user_type", "user_id", "memory_type"),
+        Index("ix_memory_items_user_policy", "user_id", "policy_version"),
+        CheckConstraint("policy_version IN ('v1', 'v2')", name="policy_version_values"),
+        CheckConstraint(
+            "status IN ('CANDIDATE', 'CONFIRMED', 'SUPERSEDED', 'REVOKED')",
+            name="memory_status_values",
+        ),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="confidence_range"),
     )
 
     user_id: Mapped[UUID] = mapped_column(
@@ -620,6 +654,24 @@ class MemoryItem(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    policy_version: Mapped[str] = mapped_column(
+        String(8), default="v1", server_default="v1", nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default="CONFIRMED", server_default="CONFIRMED", nullable=False
+    )
+    confidence: Mapped[float] = mapped_column(
+        Numeric(4, 3), default=1.0, server_default="1.0", nullable=False
+    )
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    supersedes_memory_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("memory_items.id", ondelete="SET NULL"), nullable=True, index=True
     )
 
 
@@ -669,6 +721,89 @@ class MemorySource(Base):
     )
     message_id: Mapped[UUID] = mapped_column(
         ForeignKey("messages.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class MemoryGraphEdge(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "memory_graph_edges"
+    __table_args__ = (
+        UniqueConstraint("memory_id", "source_entity", "relation", "target_entity"),
+        CheckConstraint("length(trim(source_entity)) > 0", name="nonempty_source_entity"),
+        CheckConstraint("length(trim(relation)) > 0", name="nonempty_relation"),
+        CheckConstraint("length(trim(target_entity)) > 0", name="nonempty_target_entity"),
+        Index("ix_memory_graph_edges_user_source", "user_id", "source_entity"),
+        Index("ix_memory_graph_edges_user_target", "user_id", "target_entity"),
+        Index("ix_memory_graph_edges_user_policy", "user_id", "policy_version"),
+        CheckConstraint("policy_version IN ('v1', 'v2')", name="policy_version_values"),
+        CheckConstraint(
+            "status IN ('CANDIDATE', 'CONFIRMED', 'SUPERSEDED', 'REVOKED')",
+            name="edge_status_values",
+        ),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="edge_confidence_range"),
+    )
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    memory_id: Mapped[UUID] = mapped_column(
+        ForeignKey("memory_items.id", ondelete="CASCADE"), index=True
+    )
+    source_entity: Mapped[str] = mapped_column(String(160), nullable=False)
+    relation: Mapped[str] = mapped_column(String(80), nullable=False)
+    target_entity: Mapped[str] = mapped_column(String(160), nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    policy_version: Mapped[str] = mapped_column(
+        String(8), default="v1", server_default="v1", nullable=False
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), default="CONFIRMED", server_default="CONFIRMED", nullable=False
+    )
+    confidence: Mapped[float] = mapped_column(
+        Numeric(4, 3), default=1.0, server_default="1.0", nullable=False
+    )
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    supersedes_edge_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("memory_graph_edges.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+
+class MemoryAccessLog(UUIDPrimaryKeyMixin, CreatedAtMixin, Base):
+    __tablename__ = "memory_access_logs"
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('RETRIEVE', 'DISCLOSE', 'SHARE')", name="action_values"
+        ),
+        CheckConstraint("decision IN ('ALLOW', 'DENY')", name="decision_values"),
+        CheckConstraint(
+            "reason_code IN ('OWNER', 'ACL', 'NO_PERMISSION', 'DELETED', 'EXPIRED')",
+            name="reason_code_values",
+        ),
+        Index(
+            "ix_memory_access_logs_memory_requester",
+            "memory_id",
+            "requesting_character_instance_id",
+        ),
+    )
+
+    conversation_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    memory_id: Mapped[UUID] = mapped_column(
+        ForeignKey("memory_items.id", ondelete="CASCADE"), index=True
+    )
+    requesting_character_instance_id: Mapped[UUID] = mapped_column(
+        ForeignKey("character_instances.id", ondelete="CASCADE"), index=True
+    )
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    decision: Mapped[str] = mapped_column(String(8), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(24), nullable=False)
+    scene_plan_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("scene_plans.id", ondelete="SET NULL"), nullable=True
     )
 
 
@@ -744,6 +879,7 @@ __all__ = [
     "Job",
     "JobCheckpoint",
     "MemoryACL",
+    "MemoryAccessLog",
     "MemoryItem",
     "MemorySource",
     "Message",

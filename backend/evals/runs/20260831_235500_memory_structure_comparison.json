@@ -1,0 +1,83 @@
+{
+  "dataset_type": "memory_structure_comparison",
+  "generated_at": "2026-08-31T05:54:29.130222+00:00",
+  "baseline": {
+    "policy_version": "v1",
+    "file": "evals\\runs\\20260831_235500_memory_structure_v1.json",
+    "metrics": {
+      "cases_total": 13,
+      "cases_succeeded": 13,
+      "cases_failed": 0,
+      "memory_records_total": 1,
+      "memory_records_per_case": 0.077,
+      "memory_type_counts": {
+        "RELATIONSHIP": 1
+      },
+      "memory_type_distribution": {
+        "RELATIONSHIP": 1.0
+      },
+      "valid_memory_type_rate": 1.0,
+      "owner_constraint_rate": 1.0,
+      "source_conversation_coverage": 1.0,
+      "policy_version_consistency": 1.0,
+      "superseded_link_rate": 0.0,
+      "duplicate_content_rate": 0.0,
+      "graph_edges_total": 1,
+      "graph_edge_case_coverage": 1.0,
+      "graph_edge_valid_rate": 1.0,
+      "summary_field_presence_rate": 0.0,
+      "semantic_precision_recall_f1": null
+    }
+  },
+  "candidate": {
+    "policy_version": "v2",
+    "file": "evals\\runs\\20260831_235500_memory_structure_v2.json",
+    "metrics": {
+      "cases_total": 13,
+      "cases_succeeded": 13,
+      "cases_failed": 0,
+      "memory_records_total": 4,
+      "memory_records_per_case": 0.308,
+      "memory_type_counts": {
+        "PROFILE": 1,
+        "RELATIONSHIP": 2,
+        "USER_GLOBAL": 1
+      },
+      "memory_type_distribution": {
+        "PROFILE": 0.25,
+        "RELATIONSHIP": 0.5,
+        "USER_GLOBAL": 0.25
+      },
+      "valid_memory_type_rate": 1.0,
+      "owner_constraint_rate": 1.0,
+      "source_conversation_coverage": 1.0,
+      "policy_version_consistency": 1.0,
+      "superseded_link_rate": 0.0,
+      "duplicate_content_rate": 0.0,
+      "graph_edges_total": 3,
+      "graph_edge_case_coverage": 0.75,
+      "graph_edge_valid_rate": 1.0,
+      "summary_field_presence_rate": 0.0,
+      "semantic_precision_recall_f1": null
+    }
+  },
+  "delta_candidate_minus_baseline": {
+    "cases_total": 0.0,
+    "cases_succeeded": 0.0,
+    "cases_failed": 0.0,
+    "memory_records_total": 3.0,
+    "memory_records_per_case": 0.231,
+    "valid_memory_type_rate": 0.0,
+    "owner_constraint_rate": 0.0,
+    "source_conversation_coverage": 0.0,
+    "policy_version_consistency": 0.0,
+    "superseded_link_rate": 0.0,
+    "duplicate_content_rate": 0.0,
+    "graph_edges_total": 2.0,
+    "graph_edge_case_coverage": -0.25,
+    "graph_edge_valid_rate": 0.0,
+    "summary_field_presence_rate": 0.0
+  },
+  "semantic_precision_recall_f1": null,
+  "note": "구조 건강 지표 비교입니다. 의미 정확도의 Precision/Recall/F1은 별도 주석 골드셋이 필요합니다."
+}

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>현재 메모리 아키텍처 가이드</title>
+  <style>
+    :root { --ink:#172033; --muted:#62708a; --line:#dbe3ef; --bg:#f6f8fc; --panel:#fff; --accent:#5956e9; --accent-soft:#eeedff; --good:#107c54; --warn:#a45b00; --danger:#b42318; }
+    * { box-sizing:border-box; } html { scroll-behavior:smooth; }
+    body { margin:0; color:var(--ink); background:var(--bg); font-family:Inter, Pretendard, "Noto Sans KR", Arial, sans-serif; line-height:1.7; }
+    .shell { max-width:1440px; margin:0 auto; display:grid; grid-template-columns:270px minmax(0,1fr); gap:28px; padding:28px; }
+    .sidebar { position:sticky; top:20px; align-self:start; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }
+    .sidebar h2 { font-size:16px; margin:0 0 10px; } .sidebar a { display:block; padding:6px 8px; color:var(--muted); text-decoration:none; border-radius:8px; font-size:14px; }
+    .sidebar a:hover { background:var(--accent-soft); color:var(--accent); } .sidebar .meta { margin-top:18px; padding-top:14px; border-top:1px solid var(--line); color:var(--muted); font-size:12px; }
+    main { min-width:0; } .hero, section { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:28px; margin-bottom:18px; }
+    .hero { border-top:5px solid var(--accent); } h1 { margin:0 0 8px; font-size:32px; letter-spacing:-.04em; } h2 { margin:0 0 12px; font-size:23px; letter-spacing:-.025em; } h3 { margin:4px 0 8px; font-size:17px; }
+    p { margin:8px 0; } .lead { color:var(--muted); font-size:16px; } .tag { display:inline-block; margin:4px 6px 0 0; padding:2px 9px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:12px; font-weight:700; }
+    .notice { margin-top:18px; padding:14px 16px; border-left:4px solid var(--warn); background:#fff8e8; color:#684000; border-radius:8px; } .fact { margin-top:18px; padding:14px 16px; border-left:4px solid var(--good); background:#effaf5; color:#075b3c; border-radius:8px; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; } .card { border:1px solid var(--line); border-radius:12px; padding:16px; background:#fff; } .card p { color:var(--muted); font-size:14px; }
+    .flow { display:flex; flex-wrap:wrap; align-items:stretch; gap:8px; margin:18px 0; } .flow .node { flex:1 1 145px; min-width:130px; padding:14px; border-radius:11px; background:#f5f6ff; border:1px solid #d9d8ff; text-align:center; font-weight:700; font-size:14px; } .flow .node small { display:block; margin-top:5px; color:var(--muted); font-weight:400; } .flow .arrow { display:grid; place-items:center; color:var(--accent); font-size:22px; }
+    details { border:1px solid var(--line); border-radius:12px; margin:12px 0; overflow:hidden; background:#fff; } summary { cursor:pointer; list-style:none; padding:15px 17px; font-weight:700; background:#fbfcff; } summary::-webkit-details-marker { display:none; } summary::before { content:"＋"; display:inline-block; width:22px; color:var(--accent); font-size:18px; } details[open] summary::before { content:"−"; } .detail-body { padding:4px 17px 18px; }
+    table { width:100%; border-collapse:collapse; margin:12px 0; font-size:14px; } th, td { text-align:left; vertical-align:top; padding:10px; border-bottom:1px solid var(--line); } th { color:var(--muted); font-size:12px; background:#fbfcff; } code { padding:1px 5px; border-radius:5px; background:#f0f3f8; color:#26324a; font-family:Consolas, monospace; font-size:.92em; } pre { overflow:auto; padding:14px; border-radius:10px; background:#172033; color:#e8edf7; font-size:13px; line-height:1.55; } pre code { padding:0; background:transparent; color:inherit; } ul, ol { margin:8px 0; padding-left:21px; } li { margin:5px 0; }
+    .yes { color:var(--good); font-weight:700; } .no { color:var(--danger); font-weight:700; } .partial { color:var(--warn); font-weight:700; } .path { padding:12px 14px; border-radius:9px; background:#f4f7fb; border:1px dashed #c6d1e2; color:#43506a; font-size:13px; } .foot { color:var(--muted); font-size:13px; }
+    @media (max-width:900px) { .shell { grid-template-columns:1fr; padding:14px; } .sidebar { position:static; } .grid { grid-template-columns:1fr; } h1 { font-size:26px; } .hero, section { padding:20px; } }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <nav class="sidebar" aria-label="문서 목차">
+      <h2>현재 구조 목차</h2>
+      <a href="#one-screen">1. 한 화면 요약</a><a href="#request-flow">2. 요청 처리 흐름</a><a href="#database">3. DB 메모리 구조</a><a href="#acl">4. ACL 규칙</a><a href="#creation">5. 기억 생성·요약</a><a href="#retrieval">6. 기억 검색</a><a href="#frameworks">7. LangGraph·LangChain</a><a href="#graphrag">8. 부분 GraphRAG</a><a href="#evaluation">9. 평가 대시보드</a><a href="#grafana">10. Grafana 시각화</a><a href="#limits">11. 현재 범위·제한</a>
+      <div class="meta">작성: 2026-08-27 08:51 KST<br>대상: 현재 구현된 코드만</div>
+    </nav>
+    <main>
+      <header class="hero"><h1>현재 메모리 아키텍처 가이드</h1><p class="lead">현재 저장·권한·검색·응답 생성·관측성 흐름을 코드 기준으로 설명한다. 앞으로의 개선 계획은 포함하지 않는다.</p><span class="tag">MemoryItem</span><span class="tag">MemoryACL</span><span class="tag">LangGraph</span><span class="tag">LangChain Runnable</span><span class="tag">부분 GraphRAG</span><span class="tag">Grafana</span><div class="notice"><b>읽는 방법:</b> 각 제목을 클릭하면 상세 설명, DB 필드, 간단한 구현 코드까지 펼쳐진다. 처음에는 1 → 2 → 3 → 4 순서로 읽으면 된다.</div></header>
+
+      <section id="one-screen"><h2>1. 한 화면 요약</h2>
+        <div class="flow" aria-label="현재 메모리 처리 흐름"><div class="node">사용자 발화<small>대화 요청</small></div><div class="arrow">→</div><div class="node">LangGraph<small>화자 선택·검색·생성·저장</small></div><div class="arrow">→</div><div class="node">ACL 메모리 검색<small>최신 허용 메모리 최대 8개</small></div><div class="arrow">→</div><div class="node">관계 검색<small>조건부, 최대 5개 edge</small></div><div class="arrow">→</div><div class="node">응답 LLM<small>응답 + 기억 후보를 같은 호출에서 생성</small></div><div class="arrow">→</div><div class="node">DB 저장<small>MemoryItem + 선택적 Edge</small></div></div>
+        <div class="grid"><div class="card"><h3>현재 메모리</h3><p>한 개의 <code>memory_items</code> 테이블에 본문, 유형, 민감도, 소유 캐릭터, 만료·삭제 상태를 저장한다.</p></div><div class="card"><h3>현재 권한</h3><p><code>memory_acl.can_read=true</code>인 캐릭터만 검색 결과를 받는다. 그래프 edge도 원본 메모리 ACL을 다시 확인한다.</p></div><div class="card"><h3>현재 검색</h3><p>의미 유사도 검색이 아니라 생성일 최신순 검색이다. 임베딩 컬럼은 있지만 현재 검색에서 사용하지 않는다.</p></div><div class="card"><h3>현재 GraphRAG</h3><p>관계 질문 신호가 있을 때 관계 문자열을 키워드 검색한다. 다단계 노드 탐색은 아직 하지 않는다.</p></div></div>
+        <div class="fact"><b>핵심 사실:</b> 현재는 별도 “대화 요약 API 호출”이 없다. 응답 생성 LLM의 구조화된 출력에 기억 후보가 포함되며, 조건을 만족할 때만 DB에 저장된다.</div>
+      </section>
+
+      <section id="request-flow"><h2>2. 요청 하나가 처리되는 흐름</h2>
+        <details open><summary>기본 경로: 한 명의 캐릭터가 응답하는 경우</summary><div class="detail-body"><pre><code>START
+  → select_speakers
+  → retrieve_primary_context
+      → LangChain Runnable
+      → ACL 허용 일반 메모리 최대 8개
+      → 관계 질문 신호가 있으면 graph edge 최대 5개 추가 검색
+  → generate_primary
+      → LLM이 응답 text + extracted_memory를 함께 반환
+  → store_primary_memory
+      → has_memory=true일 때만 MemoryItem 저장
+      → 관계가 명시되면 MemoryGraphEdge 저장
+  → finalize
+  → END</code></pre><p>이 구조는 <code>backend/app/workflows/conversation_graph.py</code>의 <code>StateGraph</code>에 정의돼 있다.</p></div></details>
+        <details><summary>두 명의 캐릭터가 응답하는 경우</summary><div class="detail-body"><p>첫 번째 캐릭터의 응답 뒤에 <code>needs_second_speaker</code> 또는 강제 2인 응답 조건이 참이면 다음 경로가 추가된다.</p><pre><code>store_primary_memory
+  → retrieve_secondary_context
+  → generate_secondary
+  → store_secondary_memory
+  → finalize</code></pre><p>한 사용자 발화에도 최대 두 번의 응답 LLM 호출과 두 번의 기억 후보 추출이 일어날 수 있다. 각 캐릭터는 자신에게 ACL로 허용된 메모리만 검색한다.</p></div></details>
+        <details><summary>현재 LangGraph 상태에 들어 있는 값</summary><div class="detail-body"><table><thead><tr><th>상태 값</th><th>의미</th></tr></thead><tbody><tr><td><code>context</code></td><td>사용자·캐릭터 인스턴스·프로필 등의 요청 컨텍스트</td></tr><tr><td><code>conversation_id</code></td><td>현재 대화 식별자</td></tr><tr><td><code>user_text</code></td><td>이번 사용자 발화</td></tr><tr><td><code>recent_messages</code></td><td>이번 대화에서 최근 메시지 목록</td></tr><tr><td><code>primary_memory_context</code></td><td>첫 번째 캐릭터에 전달할 기억 목록</td></tr><tr><td><code>secondary_memory_context</code></td><td>두 번째 캐릭터에 전달할 기억 목록</td></tr></tbody></table><p>장기 메모리 DB 전체를 상태에 넣지 않는다. 검색 결과만 <code>MemoryContextItem</code> 목록으로 상태에 전달한다.</p></div></details>
+      </section>
+
+      <section id="database"><h2>3. DB 메모리 구조</h2><div class="path">사용자 1명 → MemoryItem 여러 개 → 각 MemoryItem에 ACL 여러 개·그래프 edge 여러 개·접근 로그 여러 개가 연결되는 구조</div>
+        <details open><summary>memory_items — 기억 본문과 생명주기</summary><div class="detail-body"><table><thead><tr><th>필드</th><th>현재 의미</th></tr></thead><tbody><tr><td><code>user_id</code></td><td>기억이 속한 사용자</td></tr><tr><td><code>memory_type</code></td><td><code>USER_GLOBAL</code>, <code>RELATIONSHIP</code>, <code>GROUP</code>, <code>CHARACTER_INTERNAL</code> 중 하나</td></tr><tr><td><code>owner_character_instance_id</code></td><td>관계·캐릭터 내부 메모리의 소유 캐릭터. 사용자 공통·그룹 메모리는 비어 있어야 한다.</td></tr><tr><td><code>source_conversation_id</code></td><td>기억이 나온 대화</td></tr><tr><td><code>content</code></td><td>기억 본문</td></tr><tr><td><code>sensitivity</code></td><td><code>PUBLIC</code>, <code>PERSONAL</code>, <code>PRIVATE</code>, <code>HIGH</code></td></tr><tr><td><code>embedding</code></td><td>JSONB 벡터 자리. 현재 검색에는 사용하지 않는다.</td></tr><tr><td><code>metadata_json</code></td><td>추가 메타데이터용 JSON</td></tr><tr><td><code>expires_at / deleted_at</code></td><td>만료·soft delete 상태. 검색에서 제외된다.</td></tr></tbody></table><pre><code>class MemoryItem(...):
+    memory_type: str
+    owner_character_instance_id: UUID | None
+    content: str
+    sensitivity: str
+    embedding: list[float] | None
+    expires_at: datetime | None
+    deleted_at: datetime | None</code></pre></div></details>
+        <details><summary>memory_acl — 캐릭터별 접근 권한</summary><div class="detail-body"><p>한 메모리에는 사용자 또는 캐릭터 인스턴스 단위 ACL을 여러 개 둘 수 있다. 실제 검색은 캐릭터 인스턴스 ACL을 조인해서 처리한다.</p><table><thead><tr><th>필드</th><th>현재 의미</th></tr></thead><tbody><tr><td><code>subject_type / subject_id</code></td><td>권한 대상의 종류와 식별자. 현재 값은 <code>USER</code> 또는 <code>CHARACTER_INSTANCE</code></td></tr><tr><td><code>can_know</code></td><td>그 기억의 존재를 알 수 있는지</td></tr><tr><td><code>can_read</code></td><td>본문을 검색·읽을 수 있는지</td></tr><tr><td><code>can_disclose_to</code></td><td>다른 참여자에게 공개할 수 있는지</td></tr><tr><td><code>granted_by_user_id</code></td><td>권한을 부여한 사용자</td></tr></tbody></table></div></details>
+        <details><summary>memory_graph_edges — 기억에서 나온 관계</summary><div class="detail-body"><p>독립된 지식 그래프가 아니라, <b>특정 MemoryItem을 근거로 하는 관계 레코드</b>다.</p><pre><code>MemoryItem
+  “사용자는 다음 주 면접이 걱정된다고 말했다.”
+
+MemoryGraphEdge
+  source_entity = “사용자”
+  relation      = “걱정한다”
+  target_entity = “다음 주 면접”
+  memory_id     = 위 MemoryItem의 ID</code></pre><p><code>memory_id + source_entity + relation + target_entity</code> 조합은 중복 저장되지 않는다.</p></div></details>
+        <details><summary>memory_access_logs·memory_sources</summary><div class="detail-body"><ul><li><code>memory_access_logs</code>: 누가 어떤 기억을 조회·공개·공유하려 했는지, 허용·차단됐는지, 이유가 무엇인지 기록한다.</li><li><code>memory_sources</code>: 기억과 원본 메시지를 연결하기 위한 테이블이다.</li></ul></div></details>
+      </section>
+
+      <section id="acl"><h2>4. ACL 규칙</h2>
+        <details open><summary>일반 메모리 검색에 적용되는 실제 조건</summary><div class="detail-body"><pre><code>MemoryItem.user_id == 현재 사용자
+AND MemoryItem.deleted_at IS NULL
+AND (expires_at IS NULL OR expires_at &gt; 현재 시각)
+AND MemoryACL.subject_type == "CHARACTER_INSTANCE"
+AND MemoryACL.subject_id == 현재 응답 캐릭터
+AND MemoryACL.can_read == true
+ORDER BY MemoryItem.created_at DESC
+LIMIT 8</code></pre><p>현재 기본 검색은 <b>권한이 허용된, 삭제되지 않고 만료되지 않은 기억 중 최신 8개</b>다. 검색 결과마다 <code>RETRIEVE / ALLOW</code> 접근 로그가 기록된다.</p></div></details>
+        <details><summary>권한의 의미와 공유 제안</summary><div class="detail-body"><ul><li><code>can_read</code>가 거짓이면 해당 캐릭터의 프롬프트에 메모리 본문이 들어가지 않는다.</li><li><code>can_disclose_to</code>는 다른 참여자에게 기억을 말로 공개할 수 있는지와 관련된 권한이다.</li><li>LLM이 다른 캐릭터에게 실제로 말한 메모리 ID를 반환하면, 서비스는 그 ID가 이번 요청에서 해당 캐릭터에게 검색된 것이 맞는지 다시 확인한 후 공유 제안을 만든다.</li><li>공유 제안 자체가 DB ACL을 자동으로 바꾸지는 않는다.</li></ul></div></details>
+        <details><summary>그래프 검색에도 ACL이 다시 적용되는 이유</summary><div class="detail-body"><p>관계 edge만 별도로 읽으면 관계를 통해 비공개 기억의 존재를 유추하는 누출이 생길 수 있다. 그래서 그래프 검색은 edge를 원본 <code>MemoryItem</code>에 조인하고, 다시 요청 캐릭터의 <code>can_read=true</code> ACL을 확인한다.</p><p class="yes">결과: 그래프 edge는 일반 메모리보다 넓은 권한을 주지 않는다.</p></div></details>
+      </section>
+
+      <section id="creation"><h2>5. 기억 생성과 “요약”의 현재 의미</h2>
+        <details open><summary>현재는 별도 대화 요약 호출이 없다</summary><div class="detail-body"><p>현재 응답 생성 LLM은 사용자에게 보낼 <code>text</code>와 함께 선택적으로 <code>extracted_memory</code>를 반환한다. 별도의 요약 API를 호출하지 않는다.</p><pre><code>{
+  "text": "사용자에게 보낼 캐릭터 응답",
+  "extracted_memory": {
+    "has_memory": true,
+    "content": "사용자는 다음 주 면접이 걱정된다고 말했다.",
+    "sensitivity": "PERSONAL",
+    "graph_relation": {
+      "has_relation": true,
+      "source_entity": "사용자",
+      "relation": "걱정한다",
+      "target_entity": "다음 주 면접",
+      "summary": "면접 전 불안"
+    }
+  }
+}</code></pre><p>대화 전체를 압축하는 에피소드 요약이 아니라, <b>이번 사용자 발화에서 장기적으로 기억할 만한 사실을 한두 문장으로 재서술하는 추출</b>에 가깝다.</p></div></details>
+        <details><summary>LLM에 주어진 현재 기억 추출 규칙</summary><div class="detail-body"><ul><li>앞으로도 기억할 가치가 있는 새로운 사실일 때만 <code>has_memory=true</code></li><li>이미 전달된 기억을 중복 저장하지 않음</li><li>사소한 잡담·일회성 감탄·추측한 감정은 저장하지 않음</li><li>사용자가 실제로 말한 내용만 기록</li><li>본문은 “사용자는 ~라고 말했다” 형태의 짧고 구체적인 한두 문장</li><li>명시된 주체·관계·대상이 있을 때만 graph relation 생성</li></ul></div></details>
+        <details><summary>저장 코드가 실제로 하는 일</summary><div class="detail-body"><pre><code>if not result.extracted_memory.has_memory:
+    return
+
+memory_record = memory_repository.create_memory(
+    content=content,
+    memory_type="RELATIONSHIP",
+    sensitivity=result.extracted_memory.sensitivity,
+    owner_character_instance_id=현재_응답_캐릭터,
+    readable_by=공유_모드로_계산한_캐릭터들,
+)
+
+if graph_relation.has_relation:
+    graph_repository.create_edge(memory_id=memory_record.id, ...)</code></pre><div class="notice"><b>현재 사실:</b> 자동 추출 메모리는 본문이 선호·일정·감정처럼 보여도 현재 코드에서 <code>RELATIONSHIP</code> 타입으로 저장된다.</div></div></details>
+      </section>
+
+      <section id="retrieval"><h2>6. 기억 검색과 프롬프트 조립</h2>
+        <details open><summary>일반 메모리 검색</summary><div class="detail-body"><p>각 응답 캐릭터마다 일반 메모리 검색을 먼저 실행한다. 결과는 ACL을 통과한 최신 메모리 최대 8개다.</p><pre><code>memory_records = memory_repository.retrieve(
+    user_id=현재_사용자,
+    viewer_character_instance_id=현재_응답_캐릭터,
+    conversation_id=현재_대화,
+)</code></pre><p class="no">현재는 content·embedding 유사도, 메모리 유형별 쿼터, 토큰 예산 기반 정렬을 적용하지 않는다.</p></div></details>
+        <details><summary>LangChain Document로 변환되는 이유</summary><div class="detail-body"><p>검색 결과는 LangChain의 <code>Document</code>로도 변환된다. 본문은 <code>page_content</code>, 메모리 ID·유형·민감도·출처는 <code>metadata</code>에 들어간다.</p><pre><code>Document(
+    page_content=record.content,
+    metadata={
+        "memory_id": str(record.id),
+        "memory_type": record.memory_type,
+        "sensitivity": record.sensitivity,
+        "source": "acl_memory",
+    },
+)</code></pre><p>현재 응답 프롬프트 조립은 <code>MemoryContextItem</code>을 사용한다. <code>Document</code>는 LangChain 기반 검색 경계를 만들기 위한 형식이다.</p></div></details>
+        <details><summary>그래프 검색 결과가 일반 기억과 합쳐지는 방식</summary><div class="detail-body"><p>그래프 검색 결과의 원본 <code>memory_id</code>가 이미 일반 메모리에 있으면 중복 추가하지 않는다. 없으면 아래 문자열을 관계 기억으로 추가한다.</p><pre><code>[관계 그래프] 사용자 —[걱정한다]→ 다음 주 면접 (면접 전 불안)</code></pre></div></details>
+      </section>
+
+      <section id="frameworks"><h2>7. LangGraph·LangChain·ConversationService 역할 분리</h2>
+        <details open><summary>책임 경계</summary><div class="detail-body"><table><thead><tr><th>구성 요소</th><th>현재 책임</th><th>대표 위치</th></tr></thead><tbody><tr><td><b>ConversationService</b></td><td>대화 요청을 받아 LangGraph 워크플로를 호출하고, 메모리 검색·응답 생성·저장을 위한 서비스 메서드를 제공한다.</td><td><code>app/services/conversations.py</code></td></tr><tr><td><b>LangGraph</b></td><td>화자 선택 → 검색 → 생성 → 저장 → 조건 분기의 실행 순서와 상태를 관리한다.</td><td><code>app/workflows/conversation_graph.py</code></td></tr><tr><td><b>LangChain</b></td><td>기존 메모리 저장소를 <code>RunnableLambda</code>와 <code>Document</code> 형태로 감싼 검색 어댑터다.</td><td><code>app/rag/retriever.py</code></td></tr><tr><td><b>Repository</b></td><td>SQLAlchemy로 DB 저장·조회·ACL 조인·접근 로그 기록을 처리한다.</td><td><code>app/repositories/memory.py</code>, <code>graph.py</code></td></tr></tbody></table></div></details>
+        <details><summary>LangGraph를 쓰는 이유</summary><div class="detail-body"><ul><li>1명 응답과 2명 응답의 조건 분기를 코드에서 노드·edge로 명시한다.</li><li>검색·생성·저장을 분리해서 노드별 시간을 기록한다.</li><li>대화 순서가 한 함수에 섞이지 않아 실행 경로를 추적할 수 있다.</li></ul></div></details>
+        <details><summary>LangChain을 쓰는 이유</summary><div class="detail-body"><ul><li>현재 SQLAlchemy 검색을 <code>Runnable</code>이라는 호출 가능한 단위로 감싼다.</li><li>검색 결과를 <code>Document</code>로 표준화한다.</li><li>ConversationWorkflow가 DB 구현 세부사항을 직접 알지 않게 한다.</li></ul><p><code>Runnable</code>은 입력을 받아 출력을 반환하는 재사용 가능한 처리 단위다. 현재는 <code>RetrievalRequest → RetrievalBundle</code> 변환을 담당한다.</p></div></details>
+      </section>
+
+      <section id="graphrag"><h2>8. 현재 부분 GraphRAG</h2>
+        <details open><summary>언제 실행되는가</summary><div class="detail-body"><p>사용자 발화에 아래 정규식 신호 중 하나가 있을 때만 실행한다.</p><pre><code>관계 | 사이 | 누구 | 누가 | 왜 | 이유 | 전 | 후 | 이후 | 기억 | 다시</code></pre><p>일반 메모리 검색은 항상 실행되고, GraphRAG는 그 결과에 추가되는 조건부 검색이다.</p></div></details>
+        <details><summary>실제로 무엇을 검색하는가</summary><div class="detail-body"><ol><li>사용자 문장에서 두 글자 이상 토큰을 최대 8개 추출한다.</li><li>불용어를 제거한다.</li><li><code>source_entity</code>, <code>relation</code>, <code>target_entity</code>, <code>summary</code>에 토큰이 포함된 edge를 찾는다.</li><li>원본 메모리 ACL을 통과한 최근 edge 최대 5개를 반환한다.</li></ol><p class="partial">현재 구현은 “관계가 담긴 메모리를 추가 검색”하는 부분 GraphRAG다. 노드 간 2홉·3홉을 따라가는 그래프 순회는 아니다.</p></div></details>
+        <details><summary>왜 일반 검색을 대체하지 않는가</summary><div class="detail-body"><ul><li>일반 잡담은 최신 ACL 허용 메모리만으로도 충분할 수 있다.</li><li>관계 검색은 “왜”, “누구”, “전후”처럼 관계가 필요한 질문에만 추가 근거를 제공한다.</li><li>그래프 edge도 원본 ACL을 확인하므로 관계 검색이 권한 범위를 넓히지 않는다.</li></ul></div></details>
+      </section>
+
+      <section id="evaluation"><h2>9. 현재 메모리 평가 대시보드</h2>
+        <details open><summary>대시보드가 보는 평가 대상</summary><div class="detail-body"><p>로컬 파일 <code>backend/devtools/20260820_1512_evaluation_dashboard.html</code>에는 두 탭이 있다.</p><table><thead><tr><th>탭</th><th>현재 평가 방식</th><th>표시 지표</th></tr></thead><tbody><tr><td>C모드 대화 평가</td><td>골드셋 CSV와 실행 결과 JSONL/JSON을 <code>case_id</code>로 연결하고, 자동 구조 검사와 사람 0~2점 검토를 함께 사용한다.</td><td>골드셋 케이스 수, 실행 성공·오류, 사람 검토 완료 수, 평균 사람 점수, LLM 호출 수, 메모리 검색 수, 실행 경로, 전체 시간</td></tr><tr><td>메모리 ACL 평가</td><td>ACL 골드셋과 실제 결과를 비교해 사람이 판정한다.</td><td>ACL 케이스 수, 판정 입력 완료 수, 접근 판정 정확도, 메모리 누출 수, 과도한 차단 수</td></tr></tbody></table></div></details>
+        <details><summary>ACL 평가에서 “누출”을 판단하는 기준</summary><div class="detail-body"><p>차단 대상 캐릭터가 메모리 <b>본문·요약·ID</b> 중 하나라도 볼 수 있으면 누출이다. 누출이 한 건이라도 있으면 해당 ACL 결과는 통과할 수 없도록 대시보드에 명시돼 있다.</p></div></details>
+        <details><summary>현재 평가에 없는 지표</summary><div class="detail-body"><p class="no">현재 평가 대시보드에는 Context Precision, Context Recall, Groundedness, Graph Path Accuracy 같은 검색 정확도 지표는 구현돼 있지 않다.</p><p>현재 구현된 평가는 대화 품질의 사람 검토, 구조 검사, ACL 허용·차단 정확도에 초점이 있다.</p></div></details>
+      </section>
+
+      <section id="grafana"><h2>10. Grafana에서 보는 현재 메모리 시각화</h2>
+        <details open><summary>현재 Overview 대시보드에 있는 메모리 관련 패널</summary><div class="detail-body"><table><thead><tr><th>패널 제목</th><th>실제 값</th><th>의미</th></tr></thead><tbody><tr><td>일반 메모리 검색 결과</td><td><code>character_companion_memory_search_result_count_mean</code></td><td>캐릭터·역할별 일반 ACL 메모리 검색 결과 평균 개수</td></tr><tr><td>GraphRAG 평균 관계 검색 수</td><td><code>character_companion_graphrag_search_result_count_mean</code></td><td>캐릭터·역할별 조건부 관계 edge 검색 결과 평균 개수</td></tr><tr><td>LangGraph 노드별 rolling p95</td><td><code>character_companion_workflow_node_duration_ms_p95{engine="langgraph"}</code></td><td>검색·생성·저장 등 워크플로 노드의 p95 처리 시간</td></tr></tbody></table><p>대시보드 정의는 <code>observability/grafana/dashboards/character-companion-overview.json</code>에 있다.</p></div></details>
+        <details><summary>Prometheus로 수집되는 메모리 관련 지표</summary><div class="detail-body"><ul><li><code>memory_searches_total</code>: 메모리 검색 실행 횟수</li><li><code>memory_search_result_count</code>: 일반 메모리 검색 결과 수</li><li><code>graphrag_search_result_count</code>: 관계 edge 검색 결과 수</li><li><code>workflow_node_duration_ms</code>: LangGraph 노드별 처리 시간</li><li><code>conversation_workflows_total</code>: 워크플로 성공·실패 수</li><li><code>conversation_execution_paths_total</code>: primary 또는 primary_secondary 실행 경로 수</li></ul></div></details>
+        <details><summary>Grafana에서 볼 수 없는 것</summary><div class="detail-body"><ul><li>메모리 원문과 민감 정보</li><li>특정 사용자의 실제 관계 그래프 그림</li><li>ACL 허용·차단의 개별 본문</li><li>요약 본문</li></ul><p>이 내용은 Prometheus 메트릭으로 보내지지 않는다. Grafana는 운영 수치용이고, 메모리 본문을 보내지 않는 것은 개인정보 보호 측면에서 의도된 경계다.</p></div></details>
+      </section>
+
+      <section id="limits"><h2>11. 현재 범위와 제한</h2><div class="grid"><div class="card"><h3 class="yes">구현됨</h3><ul><li>메모리 DB·ACL·접근 로그</li><li>삭제·만료 메모리 제외</li><li>LangGraph 기반 대화 순서</li><li>LangChain Runnable·Document 경계</li><li>조건부 관계 edge 검색</li><li>메모리·GraphRAG 관측 지표</li></ul></div><div class="card"><h3 class="no">현재 구현되지 않음</h3><ul><li>대화 단위 에피소드 요약</li><li>pgvector 임베딩 검색</li><li>다단계 그래프 순회</li><li>기억 유형별 의미 검색</li><li>검색 정확도 평가 지표</li><li>LangGraph durable checkpoint</li></ul></div></div><p class="foot">이 문서는 현재 코드와 대시보드 정의에서 확인한 사실만 기록한다. 구현되지 않은 항목은 계획이나 약속이 아니라 현재 범위 밖이라는 뜻이다.</p></section>
+    </main>
+  </div>
+</body>
+</html>
