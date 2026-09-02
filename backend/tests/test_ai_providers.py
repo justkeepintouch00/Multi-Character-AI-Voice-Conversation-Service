@@ -5,7 +5,11 @@ import json
 
 import httpx
 
-from app.providers.groq import GroqSceneDirector, GroqTranscriptionProvider
+from app.providers.groq import (
+    KOREAN_TRANSCRIPTION_PROMPT,
+    GroqSceneDirector,
+    GroqTranscriptionProvider,
+)
 from app.providers.scene_director import SCENE_DIRECTOR_INSTRUCTIONS
 from app.providers.typecast import TypecastTTSProvider
 from app.schemas.scene_plan import ScenePlanRequest
@@ -152,6 +156,8 @@ def test_groq_transcription_sends_multipart_audio() -> None:
         assert request.url.path == "/openai/v1/audio/transcriptions"
         assert request.headers["content-type"].startswith("multipart/form-data")
         assert b'verbose_json' in request.content
+        assert b'name="prompt"' in request.content
+        assert KOREAN_TRANSCRIPTION_PROMPT.encode() in request.content
         return httpx.Response(
             200,
             json={
@@ -191,13 +197,102 @@ def test_groq_transcription_sends_multipart_audio() -> None:
     assert result.duration_seconds == 1.8
     assert result.segments[0].avg_logprob == -0.12
     assert result.segments[0].no_speech_prob == 0.02
+    assert result.model == "whisper-large-v3-turbo"
+    assert result.fallback_used is False
+
+
+def test_groq_transcription_retries_large_v3_for_low_confidence_turbo() -> None:
+    requested_models: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        is_fallback = b"whisper-large-v3\r\n" in request.content
+        requested_models.append(
+            "whisper-large-v3" if is_fallback else "whisper-large-v3-turbo"
+        )
+        if not is_fallback:
+            return httpx.Response(
+                200,
+                json={
+                    "text": "왜곡된 1차 문장",
+                    "duration": 20.0,
+                    "segments": [
+                        {
+                            "id": 0,
+                            "start": 0.0,
+                            "end": 20.0,
+                            "text": "왜곡된 1차 문장",
+                            "avg_logprob": -0.292,
+                            "compression_ratio": 1.2,
+                            "no_speech_prob": 0.0,
+                        }
+                    ],
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "text": "정확도가 개선된 최종 문장",
+                "duration": 20.0,
+                "segments": [
+                    {
+                        "id": 0,
+                        "start": 0.0,
+                        "end": 20.0,
+                        "text": "정확도가 개선된 최종 문장",
+                        "avg_logprob": -0.1,
+                        "compression_ratio": 1.1,
+                        "no_speech_prob": 0.0,
+                    }
+                ],
+            },
+        )
+
+    provider = GroqTranscriptionProvider(
+        api_key="test-key",
+        base_url="https://api.groq.test/openai/v1",
+        model="whisper-large-v3-turbo",
+        fallback_model="whisper-large-v3",
+        fallback_avg_logprob_threshold=-0.25,
+        transport=httpx.MockTransport(handler),
+    )
+    result = asyncio.run(
+        provider.transcribe(
+            filename="recording.webm",
+            content=b"fake-audio",
+            content_type="audio/webm",
+            language="ko",
+        )
+    )
+
+    assert requested_models == ["whisper-large-v3-turbo", "whisper-large-v3"]
+    assert result.text == "정확도가 개선된 최종 문장"
+    assert result.model == "whisper-large-v3"
+    assert result.fallback_used is True
+    assert result.primary_text == "왜곡된 1차 문장"
+    assert result.primary_avg_logprob == -0.292
+    assert result.fallback_reason == "low_avg_logprob"
 
 
 def test_scene_director_defaults_to_one_speaker_without_distinct_view() -> None:
-    assert "기본적으로 가장 적합한 캐릭터 한 명만 답한다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "가장 적합한 캐릭터 한 명만 답한다" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "단순 동의" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "질문의 핵심에 먼저 답한다" in SCENE_DIRECTOR_INSTRUCTIONS
     assert "모든 발화를 고민 상담으로 취급" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "대화 복구 상황" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "변명 없이 사과" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "추가 설명 요구" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "조언, 해결책, 원인 분석을 하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "2~4개의 짧은 문장" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "같은 내용을 다시 요구하는 질문을 하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "정서적으로 정상화" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "상투적 마무리를 사용하지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "질문을 반드시 만들지 않는다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "질문 하나만 한다" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "persona와 traits" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "첫 번째 캐릭터는 사용자의 감정을 구체적으로 반영" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "다른 관점 1문장만" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "청취 시간이 사용자의 발화를 압도하지 않도록" in SCENE_DIRECTOR_INSTRUCTIONS
+    assert "기억했으면 좋겠어요" in SCENE_DIRECTOR_INSTRUCTIONS
 
 
 def test_typecast_tts_stream_maps_domain_emotion() -> None:

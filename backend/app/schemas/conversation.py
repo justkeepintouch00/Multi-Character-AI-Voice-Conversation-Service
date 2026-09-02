@@ -4,7 +4,14 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+class ConversationOpeningMessage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    speaker_id: str = Field(min_length=1, max_length=100)
+    content: str = Field(min_length=1, max_length=1000)
 
 
 class ConversationCreate(BaseModel):
@@ -12,6 +19,7 @@ class ConversationCreate(BaseModel):
 
     mode: Literal["TALK"] = "TALK"
     character_ids: list[str] = Field(min_length=1, max_length=2)
+    opening_message: ConversationOpeningMessage | None = None
 
     @field_validator("character_ids")
     @classmethod
@@ -22,6 +30,15 @@ class ConversationCreate(BaseModel):
         if len(normalized) != len(set(normalized)):
             raise ValueError("character_ids must be unique")
         return normalized
+
+    @model_validator(mode="after")
+    def opening_speaker_must_be_a_participant(self) -> "ConversationCreate":
+        if (
+            self.opening_message is not None
+            and self.opening_message.speaker_id not in self.character_ids
+        ):
+            raise ValueError("opening_message speaker must be a conversation participant")
+        return self
 
 
 class ConversationRead(BaseModel):

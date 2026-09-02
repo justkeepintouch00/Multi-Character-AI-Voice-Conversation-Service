@@ -26,11 +26,24 @@ class RecentMessage(BaseModel):
     content: str = Field(min_length=1, max_length=4000)
 
 
+class SceneCharacter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=100)
+    concept: str = Field(min_length=1, max_length=200)
+    persona: str = Field(default="", max_length=2000)
+    traits: list[str] = Field(default_factory=list, max_length=4)
+    speech_style: str = Field(default="", max_length=100)
+    relationship_style: str = Field(default="", max_length=100)
+
+
 class ScenePlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     user_text: str = Field(min_length=1, max_length=4000)
     character_ids: list[str] = Field(min_length=1, max_length=2)
+    characters: list[SceneCharacter] = Field(default_factory=list, max_length=2)
     recent_messages: list[RecentMessage] = Field(default_factory=list, max_length=12)
 
     @field_validator("user_text")
@@ -50,6 +63,14 @@ class ScenePlanRequest(BaseModel):
         if len(normalized) != len(set(normalized)):
             raise ValueError("character_ids must be unique")
         return normalized
+
+    @field_validator("characters")
+    @classmethod
+    def characters_must_be_unique(cls, value: list[SceneCharacter]) -> list[SceneCharacter]:
+        ids = [character.id for character in value]
+        if len(ids) != len(set(ids)):
+            raise ValueError("characters must have unique ids")
+        return value
 
 
 class SceneTurn(BaseModel):
@@ -77,3 +98,6 @@ class ScenePlan(BaseModel):
         }
         if invalid_speakers:
             raise ValueError("Scene plan contains an unrequested speaker")
+        speaker_ids = [turn.speaker_id for turn in self.turns]
+        if len(speaker_ids) != len(set(speaker_ids)):
+            raise ValueError("A character may speak at most once in a scene plan")

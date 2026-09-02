@@ -66,6 +66,21 @@ def get_groq_transcription_model() -> str:
     return os.getenv("GROQ_TRANSCRIPTION_MODEL", "whisper-large-v3-turbo")
 
 
+def get_groq_transcription_fallback_model() -> str | None:
+    value = os.getenv("GROQ_TRANSCRIPTION_FALLBACK_MODEL", "whisper-large-v3")
+    return value.strip() or None
+
+
+def get_groq_transcription_fallback_avg_logprob_threshold() -> float:
+    raw_value = os.getenv(
+        "GROQ_TRANSCRIPTION_FALLBACK_AVG_LOGPROB_THRESHOLD", "-0.25"
+    )
+    try:
+        return float(raw_value)
+    except ValueError:
+        return -0.25
+
+
 def get_typecast_api_key() -> str | None:
     value = os.getenv("TYPECAST_API_KEY", "").strip()
     return value or None

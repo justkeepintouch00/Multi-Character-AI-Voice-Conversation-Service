@@ -30,6 +30,12 @@ STRICT_STRUCTURED_OUTPUT_MODELS = {
     "openai/gpt-oss-120b",
 }
 
+KOREAN_TRANSCRIPTION_PROMPT = (
+    "GPT, 프로젝트, 면접, 회사, 인공지능에 관한 개인적인 고민을 말하는 "
+    "한국어 1인칭 일상 대화입니다. 발화를 한국어 그대로 받아쓰고, "
+    "영어로 번역하거나 내용을 요약·각색하지 마세요."
+)
+
 
 def _extract_chat_content(payload: dict[str, Any]) -> str:
     try:
@@ -60,9 +66,28 @@ class GroqSceneDirector:
         self.transport = transport
 
     async def create_scene_plan(self, request: ScenePlanRequest) -> ScenePlan:
-        unknown_ids = set(request.character_ids) - set(DEVELOPMENT_CHARACTERS)
-        if unknown_ids:
-            raise ProviderInputError("groq", "Unknown character_id")
+        if request.characters:
+            profiles = {character.id: character for character in request.characters}
+            if set(profiles) != set(request.character_ids):
+                raise ProviderInputError(
+                    "groq", "characters must match requested character_ids"
+                )
+        else:
+            unknown_ids = set(request.character_ids) - set(DEVELOPMENT_CHARACTERS)
+            if unknown_ids:
+                raise ProviderInputError("groq", "Unknown character_id")
+            profiles = {
+                character_id: {
+                    "id": character_id,
+                    "name": DEVELOPMENT_CHARACTERS[character_id].name,
+                    "concept": DEVELOPMENT_CHARACTERS[character_id].concept,
+                    "persona": DEVELOPMENT_CHARACTERS[character_id].persona,
+                    "traits": list(DEVELOPMENT_CHARACTERS[character_id].traits),
+                    "speech_style": "",
+                    "relationship_style": "",
+                }
+                for character_id in request.character_ids
+            }
         if not self.api_key:
             raise ProviderConfigurationError("groq", "GROQ_API_KEY is not configured")
 
@@ -70,11 +95,11 @@ class GroqSceneDirector:
         input_payload = {
             "user_text": request.user_text,
             "characters": [
-                {
-                    "id": character_id,
-                    "name": DEVELOPMENT_CHARACTERS[character_id].name,
-                    "persona": DEVELOPMENT_CHARACTERS[character_id].persona,
-                }
+                (
+                    profiles[character_id].model_dump(mode="json")
+                    if hasattr(profiles[character_id], "model_dump")
+                    else profiles[character_id]
+                )
                 for character_id in request.character_ids
             ],
             "recent_messages": [
@@ -176,11 +201,15 @@ class GroqTranscriptionProvider:
         api_key: str | None,
         base_url: str,
         model: str,
+        fallback_model: str | None = None,
+        fallback_avg_logprob_threshold: float = -0.25,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.fallback_model = fallback_model
+        self.fallback_avg_logprob_threshold = fallback_avg_logprob_threshold
         self.transport = transport
 
     async def transcribe(
@@ -194,6 +223,55 @@ class GroqTranscriptionProvider:
         if not self.api_key:
             raise ProviderConfigurationError("groq", "GROQ_API_KEY is not configured")
 
+        primary_result = await self._transcribe_once(
+            filename=filename,
+            content=content,
+            content_type=content_type,
+            language=language,
+            model=self.model,
+        )
+        primary_avg_logprob = _average_segment_logprob(primary_result.segments)
+        low_confidence = (
+            primary_avg_logprob is not None
+            and primary_avg_logprob < self.fallback_avg_logprob_threshold
+        )
+        should_retry = (
+            self.fallback_model is not None
+            and self.fallback_model != self.model
+            and low_confidence
+        )
+        if not should_retry:
+            return primary_result
+
+        fallback_result = await self._transcribe_once(
+            filename=filename,
+            content=content,
+            content_type=content_type,
+            language=language,
+            model=self.fallback_model,
+        )
+        return TranscriptionResult(
+            text=fallback_result.text,
+            language=fallback_result.language,
+            duration_seconds=fallback_result.duration_seconds,
+            segments=fallback_result.segments,
+            model=fallback_result.model,
+            fallback_used=True,
+            fallback_reason="low_avg_logprob",
+            primary_model=self.model,
+            primary_text=primary_result.text,
+            primary_avg_logprob=primary_avg_logprob,
+        )
+
+    async def _transcribe_once(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str,
+        language: str,
+        model: str,
+    ) -> TranscriptionResult:
         try:
             async with httpx.AsyncClient(
                 transport=self.transport,
@@ -204,8 +282,13 @@ class GroqTranscriptionProvider:
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     files={"file": (filename, content, content_type)},
                     data={
-                        "model": self.model,
+                        "model": model,
                         "language": language,
+                        "prompt": (
+                            KOREAN_TRANSCRIPTION_PROMPT
+                            if language.lower() == "ko"
+                            else "Natural conversational speech."
+                        ),
                         "response_format": "verbose_json",
                         "temperature": "0",
                     },
@@ -266,6 +349,7 @@ class GroqTranscriptionProvider:
             language=language,
             duration_seconds=duration_seconds,
             segments=tuple(segments),
+            model=model,
         )
 
 
@@ -273,3 +357,16 @@ def _optional_float(value: object) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+def _average_segment_logprob(
+    segments: tuple[TranscriptionSegment, ...],
+) -> float | None:
+    values = [
+        segment.avg_logprob
+        for segment in segments
+        if segment.avg_logprob is not None
+    ]
+    if not values:
+        return None
+    return sum(values) / len(values)
